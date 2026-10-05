@@ -1,0 +1,56 @@
+export type ViolationType =
+  | "NO_FACE"
+  | "MULTIPLE_FACES"
+  | "LOOK_AWAY"
+  | "FULLSCREEN_EXIT"
+  | "TAB_SWITCH"
+  | "WINDOW_BLUR"
+  | "COPY_PASTE"
+  | "SHORTCUT"
+  | "MULTIPLE_SCREENS"
+  | "CAMERA_OFF"
+  | "SCREEN_SHARE_STOPPED"
+  | "RELOAD";
+
+export type Violation = {
+  id: string;
+  type: ViolationType;
+  at: number;
+  endedAt?: number;
+  snap?: boolean;
+};
+
+export const violationLabel: Record<ViolationType, string> = {
+  NO_FACE: "Wajah tidak terdeteksi",
+  MULTIPLE_FACES: "Lebih dari satu wajah",
+  LOOK_AWAY: "Wajah tidak menghadap layar",
+  FULLSCREEN_EXIT: "Keluar dari layar penuh",
+  TAB_SWITCH: "Berpindah tab",
+  WINDOW_BLUR: "Jendela kehilangan fokus",
+  COPY_PASTE: "Aksi salin atau tempel",
+  SHORTCUT: "Pintasan terlarang",
+  MULTIPLE_SCREENS: "Layar tambahan terdeteksi",
+  CAMERA_OFF: "Kamera terputus",
+  SCREEN_SHARE_STOPPED: "Berbagi layar dihentikan",
+  RELOAD: "Halaman dimuat ulang",
+};
+
+export const violationWeight: Record<ViolationType, number> = {
+  NO_FACE: 1,
+  MULTIPLE_FACES: 3,
+  LOOK_AWAY: 1,
+  FULLSCREEN_EXIT: 2,
+  TAB_SWITCH: 3,
+  WINDOW_BLUR: 1,
+  COPY_PASTE: 1,
+  SHORTCUT: 1,
+  MULTIPLE_SCREENS: 3,
+  CAMERA_OFF: 3,
+  SCREEN_SHARE_STOPPED: 3,
+  RELOAD: 2,
+};
+
+// Kejadian sesaat tidak punya episode, jadi langsung ditutup saat dicatat.
+const instant: ViolationType[] = ["COPY_PASTE", "SHORTCUT", "WINDOW_BLUR", "RELOAD"];
+
+export const isInstant = (type: ViolationType) => instant.includes(type);

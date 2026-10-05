@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Aset wasm MediaPipe yang diunduh ke public, bukan kode kita.
+    "public/**",
   ]),
 ]);
 

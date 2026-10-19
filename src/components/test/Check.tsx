@@ -288,9 +288,16 @@ export default function Check({
 
     const stop = watchSingleFace(
       video,
-      (ready) => {
+      (ready, frozen) => {
         setFace(ready ? "siap" : "menunggu");
-        if (ready) setFaceIssue(null);
+        setFaceIssue(
+          frozen
+            ? {
+                title: "Gambar kamera tidak bergerak",
+                message: "Terindikasi kamera virtual atau gambar diam. Gunakan kamera fisik.",
+              }
+            : null,
+        );
       },
       () => {
         setFace("gagal");

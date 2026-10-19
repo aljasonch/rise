@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import {
   classifyCamera,
+  isFrozenFrame,
   isVirtualCamera,
   physicalCameras,
   preferredCamera,
@@ -82,6 +83,12 @@ assert.equal(
 );
 assert.equal(physical[0]?.kind, "integrated", "kamera terintegrasi harus diurutkan lebih dulu");
 assert.equal(preferredCamera(cameras)?.kind, "integrated", "preferensi harus memilih kamera terintegrasi");
+
+// Frame identik (gambar diam) harus terdeteksi; noise sensor ±2 tidak boleh.
+const frame = Uint8ClampedArray.from({ length: 64 * 48 * 4 }, (_, i) => (i * 37) % 256);
+const noisy = frame.map((value, i) => (i % 4 === 3 ? value : value + ((i % 5) - 2)));
+assert.equal(isFrozenFrame(frame, frame.slice()), true, "frame identik harus dianggap beku");
+assert.equal(isFrozenFrame(frame, noisy), false, "frame dengan noise sensor tidak boleh dianggap beku");
 
 console.log(
   `check-cameras: ${virtualLabels.length} label virtual, ${physical.length} kamera fisik — lolos`,

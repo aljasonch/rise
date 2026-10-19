@@ -9,6 +9,7 @@ export type ViolationType =
   | "SHORTCUT"
   | "MULTIPLE_SCREENS"
   | "CAMERA_OFF"
+  | "CAMERA_FROZEN"
   | "SCREEN_SHARE_STOPPED";
 
 export type Violation = {
@@ -30,6 +31,7 @@ export const violationLabel: Record<ViolationType, string> = {
   SHORTCUT: "Pintasan terlarang",
   MULTIPLE_SCREENS: "Layar tambahan terdeteksi",
   CAMERA_OFF: "Kamera terputus",
+  CAMERA_FROZEN: "Gambar kamera membeku (indikasi kamera virtual)",
   SCREEN_SHARE_STOPPED: "Berbagi layar dihentikan",
 };
 
@@ -49,6 +51,7 @@ export const violationWeight: Record<ViolationType, number> = {
   SHORTCUT: 1,
   MULTIPLE_SCREENS: 3,
   CAMERA_OFF: 3,
+  CAMERA_FROZEN: 3,
   SCREEN_SHARE_STOPPED: 3,
 };
 

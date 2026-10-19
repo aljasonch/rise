@@ -179,6 +179,7 @@ export const useProctor = (sessionId: string) => {
       closeViolation("NO_FACE");
       closeViolation("MULTIPLE_FACES");
       closeViolation("LOOK_AWAY");
+      closeViolation("CAMERA_FROZEN");
     });
   }, [sessionId, cam, report, closeViolation]);
 

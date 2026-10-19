@@ -55,6 +55,7 @@ const violationIcon: Record<ViolationType, IconType> = {
   SHORTCUT: FiCommand,
   MULTIPLE_SCREENS: FiMonitor,
   CAMERA_OFF: FiCameraOff,
+  CAMERA_FROZEN: FiCamera,
   SCREEN_SHARE_STOPPED: FiMonitor,
 };
 

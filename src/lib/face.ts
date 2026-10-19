@@ -1,4 +1,5 @@
 import type { FaceLandmarker as FaceLandmarkerInstance } from "@mediapipe/tasks-vision";
+import { frameDiff, isFrozenFrame } from "./cameras";
 import { config } from "./config";
 import { faceAngles } from "./pose";
 import type { ViolationType } from "./violations";
@@ -35,10 +36,11 @@ const createWithFallback = async (
   }
 };
 
-const read = (video: HTMLVideoElement, landmarker: FaceLandmarkerInstance): FaceState => {
+const read = (video: HTMLVideoElement, landmarker: FaceLandmarkerInstance, frozen: boolean): FaceState => {
   const result = landmarker.detectForVideo(video, performance.now());
   const faces = result.faceLandmarks.length;
 
+  if (frozen) return { violation: "CAMERA_FROZEN", faces };
   if (faces === 0) return { violation: "NO_FACE", faces };
   if (faces > 1) return { violation: "MULTIPLE_FACES", faces };
 
@@ -51,6 +53,27 @@ const read = (video: HTMLVideoElement, landmarker: FaceLandmarkerInstance): Face
   return { violation: away ? "LOOK_AWAY" : null, faces };
 };
 
+// Sampel kecil tanpa smoothing, supaya noise sensor per piksel tidak ikut
+// dirata-ratakan saat gambar diperkecil.
+const frameSampler = () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 48;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  let last: Uint8ClampedArray | undefined;
+
+  return (video: HTMLVideoElement) => {
+    if (!ctx) return false;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const next = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const frozen = last ? isFrozenFrame(last, next) : false;
+    if (debugOn() && last) console.log("selisih frame", frameDiff(last, next).toFixed(2));
+    last = next;
+    return frozen;
+  };
+};
+
 export const startFaceWatch = (
   video: HTMLVideoElement,
   onState: (state: FaceState) => void,
@@ -59,6 +82,7 @@ export const startFaceWatch = (
   let landmarker: FaceLandmarkerInstance | null = null;
   let timer: number | undefined;
   let stopped = false;
+  const sample = frameSampler();
 
   // Kondisi harus bertahan graceMs sebelum dihitung, dan langsung clear saat normal.
   let pending: ViolationType | null = null;
@@ -66,7 +90,7 @@ export const startFaceWatch = (
 
   const tick = () => {
     if (!landmarker || video.readyState < 2) return;
-    const found = read(video, landmarker);
+    const found = read(video, landmarker, sample(video));
 
     if (found.violation !== pending) {
       pending = found.violation;
@@ -101,7 +125,7 @@ export const startFaceWatch = (
 // Dipakai tahap persiapan: satu wajah harus stabil selama faceStableMs.
 export const watchSingleFace = (
   video: HTMLVideoElement,
-  onReady: (ready: boolean) => void,
+  onReady: (ready: boolean, frozen: boolean) => void,
   onError?: (error: unknown) => void,
 ) => {
   let since = 0;
@@ -109,17 +133,18 @@ export const watchSingleFace = (
 
   const stop = startFaceWatch(
     video,
-    ({ faces }) => {
-      if (faces !== 1) {
+    ({ faces, violation }) => {
+      const frozen = violation === "CAMERA_FROZEN";
+      if (faces !== 1 || frozen) {
         ready = false;
-        onReady(false);
+        onReady(false, frozen);
         return;
       }
       if (!ready) {
         ready = true;
         since = Date.now();
       }
-      onReady(Date.now() - since >= config.faceStableMs);
+      onReady(Date.now() - since >= config.faceStableMs, false);
     },
     onError,
   );

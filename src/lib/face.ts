@@ -1,15 +1,9 @@
 import type { FaceLandmarker as FaceLandmarkerInstance } from "@mediapipe/tasks-vision";
 import { config } from "./config";
+import { faceAngles } from "./pose";
 import type { ViolationType } from "./violations";
 
 export type FaceState = { violation: ViolationType | null; faces: number };
-
-// Indeks landmark FaceMesh: 1 hidung, 234 dan 454 pipi, 10 dahi, 152 dagu.
-const NOSE = 1;
-const CHEEK_L = 234;
-const CHEEK_R = 454;
-const TOP = 10;
-const CHIN = 152;
 
 const debugOn = () => new URLSearchParams(location.search).has("debug");
 
@@ -22,6 +16,11 @@ const create = (
     baseOptions: { modelAssetPath: "/mediapipe/face_landmarker.task", delegate },
     runningMode: "VIDEO",
     numFaces: 2,
+    // numFaces > 1 mematikan smoothing bawaan, jadi keyakinan deteksi dan
+    // tracking dinaikkan agar pose wajah tidak gemetar dan memicu LOOK_AWAY palsu.
+    minFacePresenceConfidence: 0.6,
+    minTrackingConfidence: 0.6,
+    outputFacialTransformationMatrixes: true,
   });
 
 // GPU jauh lebih ringan, tapi tidak selalu tersedia. Falls back ke CPU.
@@ -36,7 +35,6 @@ const createWithFallback = async (
   }
 };
 
-// Rasio landmark dinormalisasi 0..1, dibandingkan dengan rentang di config.
 const read = (video: HTMLVideoElement, landmarker: FaceLandmarkerInstance): FaceState => {
   const result = landmarker.detectForVideo(video, performance.now());
   const faces = result.faceLandmarks.length;
@@ -44,18 +42,20 @@ const read = (video: HTMLVideoElement, landmarker: FaceLandmarkerInstance): Face
   if (faces === 0) return { violation: "NO_FACE", faces };
   if (faces > 1) return { violation: "MULTIPLE_FACES", faces };
 
-  const p = result.faceLandmarks[0];
-  const yaw = (p[NOSE].x - p[CHEEK_L].x) / (p[CHEEK_R].x - p[CHEEK_L].x);
-  const pitch = (p[NOSE].y - p[TOP].y) / (p[CHIN].y - p[TOP].y);
-  if (debugOn()) console.log("rasio wajah", yaw.toFixed(3), pitch.toFixed(3));
+  // Tanpa matrix dianggap hadap depan: lebih baik tidak menuduh daripada salah tuduh.
+  const m = result.facialTransformationMatrixes[0];
+  const { yaw, pitch } = m ? faceAngles(m.data) : { yaw: 0, pitch: 0 };
+  if (debugOn()) console.log("sudut wajah", yaw.toFixed(1), pitch.toFixed(1));
 
-  const [yawMin, yawMax] = config.yawRange;
-  const [pitchMin, pitchMax] = config.pitchRange;
-  const away = yaw < yawMin || yaw > yawMax || pitch < pitchMin || pitch > pitchMax;
+  const away = Math.abs(yaw) > config.lookAway.yawDeg || Math.abs(pitch) > config.lookAway.pitchDeg;
   return { violation: away ? "LOOK_AWAY" : null, faces };
 };
 
-export const startFaceWatch = (video: HTMLVideoElement, onState: (state: FaceState) => void) => {
+export const startFaceWatch = (
+  video: HTMLVideoElement,
+  onState: (state: FaceState) => void,
+  onError?: (error: unknown) => void,
+) => {
   let landmarker: FaceLandmarkerInstance | null = null;
   let timer: number | undefined;
   let stopped = false;
@@ -76,12 +76,16 @@ export const startFaceWatch = (video: HTMLVideoElement, onState: (state: FaceSta
   };
 
   const init = async () => {
-    const vision = await import("@mediapipe/tasks-vision");
-    const fileset = await vision.FilesetResolver.forVisionTasks("/mediapipe/wasm");
-    if (stopped) return;
-    landmarker = await createWithFallback(vision, fileset);
-    if (stopped) return;
-    timer = window.setInterval(tick, config.faceIntervalMs);
+    try {
+      const vision = await import("@mediapipe/tasks-vision");
+      const fileset = await vision.FilesetResolver.forVisionTasks("/mediapipe/wasm");
+      if (stopped) return;
+      landmarker = await createWithFallback(vision, fileset);
+      if (stopped) return;
+      timer = window.setInterval(tick, config.faceIntervalMs);
+    } catch (error) {
+      if (!stopped) onError?.(error);
+    }
   };
 
   void init();
@@ -95,22 +99,30 @@ export const startFaceWatch = (video: HTMLVideoElement, onState: (state: FaceSta
 };
 
 // Dipakai tahap persiapan: satu wajah harus stabil selama faceStableMs.
-export const watchSingleFace = (video: HTMLVideoElement, onReady: (ready: boolean) => void) => {
+export const watchSingleFace = (
+  video: HTMLVideoElement,
+  onReady: (ready: boolean) => void,
+  onError?: (error: unknown) => void,
+) => {
   let since = 0;
   let ready = false;
 
-  const stop = startFaceWatch(video, ({ faces }) => {
-    if (faces !== 1) {
-      ready = false;
-      onReady(false);
-      return;
-    }
-    if (!ready) {
-      ready = true;
-      since = Date.now();
-    }
-    onReady(Date.now() - since >= config.faceStableMs);
-  });
+  const stop = startFaceWatch(
+    video,
+    ({ faces }) => {
+      if (faces !== 1) {
+        ready = false;
+        onReady(false);
+        return;
+      }
+      if (!ready) {
+        ready = true;
+        since = Date.now();
+      }
+      onReady(Date.now() - since >= config.faceStableMs);
+    },
+    onError,
+  );
 
   return stop;
 };

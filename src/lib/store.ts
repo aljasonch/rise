@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { candidate, sections } from "@/data/test";
-import { seedSessions } from "@/data/seed";
+import { sections } from "@/data/test";
+import type { Identity } from "./identity";
 import { config } from "./config";
 import { isInstant, type Violation, type ViolationType } from "./violations";
 
@@ -9,7 +9,7 @@ export type Status = "berlangsung" | "selesai" | "waktu_habis" | "dihentikan";
 
 export type Session = {
   id: string;
-  candidate: { name: string; position: string; email: string };
+  candidate: Identity;
   status: Status;
   startedAt: number;
   endedAt?: number;
@@ -21,6 +21,13 @@ export type Session = {
   forceStop: boolean;
 };
 
+export const statusLabel: Record<Status, string> = {
+  berlangsung: "Berlangsung",
+  selesai: "Selesai",
+  waktu_habis: "Waktu habis",
+  dihentikan: "Dihentikan",
+};
+
 type State = {
   sessions: Record<string, Session>;
   activeId: string;
@@ -28,7 +35,7 @@ type State = {
   // Toast sekali pakai, tidak ikut dipersist.
   notice: string;
   setNotice: (text: string) => void;
-  start: () => void;
+  start: (candidate: Identity) => void;
   answer: (questionId: string, value: number) => void;
   nextSection: () => void;
   addViolation: (type: ViolationType) => string | null;
@@ -36,24 +43,21 @@ type State = {
   finish: (status: Status) => void;
   markReviewed: (sessionId: string) => void;
   stop: (sessionId: string) => void;
+  clearActive: () => void;
 };
 
 const now = () => Date.now();
 const uid = () => crypto.randomUUID();
 
-const withSession = (
-  sessions: Record<string, Session>,
-  id: string,
-  fn: (s: Session) => Session,
-) => {
+const withSession = (sessions: Record<string, Session>, id: string, fn: (session: Session) => Session) => {
   const current = sessions[id];
   if (!current) return sessions;
   return { ...sessions, [id]: fn(current) };
 };
 
-const newSession = (): Session => ({
+const newSession = (candidate: Identity): Session => ({
   id: uid(),
-  candidate,
+  candidate: { ...candidate },
   status: "berlangsung",
   startedAt: now(),
   section: 0,
@@ -64,13 +68,53 @@ const newSession = (): Session => ({
   forceStop: false,
 });
 
+type PersistedState = Pick<State, "sessions" | "activeId">;
+
+const isSession = (value: unknown): value is Session => {
+  if (!value || typeof value !== "object") return false;
+  const session = value as Partial<Session>;
+  return (
+    typeof session.id === "string" &&
+    typeof session.startedAt === "number" &&
+    typeof session.section === "number" &&
+    typeof session.deadline === "number" &&
+    Boolean(session.candidate) &&
+    typeof session.candidate?.name === "string" &&
+    Array.isArray(session.violations) &&
+    Boolean(session.answers)
+  );
+};
+
+// Sesi demo lama tidak boleh muncul lagi di panel admin. Penyaringan dilakukan
+// saat migrasi dan sekali lagi saat hidrasi untuk berjaga-jaga.
+const sanitizeSession = (session: Session): Session => ({
+  ...session,
+  // RELOAD sudah tidak dipakai. Data lama yang masih menyimpannya dibersihkan
+  // agar label dan skor tidak menghitung pelanggaran yang sudah dihapus.
+  violations: session.violations.filter((violation) => (violation.type as string) !== "RELOAD"),
+});
+
+const sanitizeSessions = (value: unknown): Record<string, Session> => {
+  if (!value || typeof value !== "object") return {};
+
+  const sessions = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      ([id, session]) => !id.startsWith("seed-") && isSession(session),
+    ),
+  ) as Record<string, Session>;
+
+  return Object.fromEntries(
+    Object.entries(sessions).map(([id, session]) => [id, sanitizeSession(session)]),
+  ) as Record<string, Session>;
+};
+
 export const useStore = create<State>()(
   persist(
     (set, get) => {
       // Semua aksi kandidat bekerja pada sesi aktif.
-      const editActive = (fn: (s: Session) => Session) => {
+      const editActive = (fn: (session: Session) => Session) => {
         const id = get().activeId;
-        set((s) => ({ sessions: withSession(s.sessions, id, fn) }));
+        set((state) => ({ sessions: withSession(state.sessions, id, fn) }));
       };
 
       return {
@@ -81,21 +125,35 @@ export const useStore = create<State>()(
 
         setNotice: (text) => set({ notice: text }),
 
-        start: () => {
-          const session = newSession();
-          set((s) => ({
-            sessions: { ...s.sessions, [session.id]: session },
+        start: (candidate) => {
+          const current = get().sessions[get().activeId];
+          if (current?.status === "berlangsung") return;
+
+          const session = newSession(candidate);
+          set((state) => ({
+            sessions: { ...state.sessions, [session.id]: session },
             activeId: session.id,
+            notice: "",
           }));
         },
 
         answer: (questionId, value) =>
-          editActive((s) => ({ ...s, answers: { ...s.answers, [questionId]: value } })),
+          editActive((session) =>
+            session.status === "berlangsung"
+              ? { ...session, answers: { ...session.answers, [questionId]: value } }
+              : session,
+          ),
 
         nextSection: () =>
-          editActive((s) => {
-            const section = s.section + 1;
-            return { ...s, section, deadline: now() + sections[section].minutes * config.minuteMs };
+          editActive((session) => {
+            if (session.status !== "berlangsung") return session;
+            const next = sections[session.section + 1];
+            if (!next) return session;
+            return {
+              ...session,
+              section: session.section + 1,
+              deadline: now() + next.minutes * config.minuteMs,
+            };
           }),
 
         // Satu episode dihitung satu kali: diabaikan bila episode yang sama masih terbuka.
@@ -103,15 +161,17 @@ export const useStore = create<State>()(
         addViolation: (type) => {
           const id = get().activeId;
           const session = get().sessions[id];
-          if (!session) return null;
+          if (!session || session.status !== "berlangsung") return null;
           const at = now();
 
-          if (session.violations.some((v) => v.type === type && !v.endedAt)) return null;
+          if (session.violations.some((violation) => violation.type === type && !violation.endedAt)) {
+            return null;
+          }
 
           // Berpindah tab dan kehilangan fokus sering datang bersamaan, dihitung satu kali.
           if (type === "TAB_SWITCH" || type === "WINDOW_BLUR") {
             const pair = type === "TAB_SWITCH" ? "WINDOW_BLUR" : "TAB_SWITCH";
-            if (session.violations.some((v) => v.type === pair && at - v.at < config.dedupeMs)) {
+            if (session.violations.some((violation) => violation.type === pair && at - violation.at < config.dedupeMs)) {
               return null;
             }
           }
@@ -123,10 +183,10 @@ export const useStore = create<State>()(
             endedAt: isInstant(type) ? at : undefined,
             snap: true,
           };
-          set((s) => ({
-            sessions: withSession(s.sessions, id, (cur) => ({
-              ...cur,
-              violations: [...cur.violations, violation],
+          set((state) => ({
+            sessions: withSession(state.sessions, id, (current) => ({
+              ...current,
+              violations: [...current.violations, violation],
             })),
           }));
           return violation.id;
@@ -135,42 +195,71 @@ export const useStore = create<State>()(
         // Dipanggil tiap frame deteksi wajah, jadi no-op harus benar-benar free.
         closeViolation: (type) => {
           const id = get().activeId;
-          const open = get().sessions[id]?.violations.some((v) => v.type === type && !v.endedAt);
-          if (!open) return;
-          editActive((s) => ({
-            ...s,
-            violations: s.violations.map((v) =>
-              v.type === type && !v.endedAt ? { ...v, endedAt: now() } : v,
+          const session = get().sessions[id];
+          if (!session || session.status !== "berlangsung") return;
+          if (!session.violations.some((violation) => violation.type === type && !violation.endedAt)) return;
+          editActive((current) => ({
+            ...current,
+            violations: current.violations.map((violation) =>
+              violation.type === type && !violation.endedAt ? { ...violation, endedAt: now() } : violation,
             ),
           }));
         },
 
-        finish: (status) => editActive((s) => ({ ...s, status, endedAt: now() })),
+        finish: (status) =>
+          editActive((session) =>
+            session.status === "berlangsung"
+              ? { ...session, status, endedAt: now(), forceStop: false }
+              : session,
+          ),
 
         markReviewed: (sessionId) =>
-          set((s) => ({
-            sessions: withSession(s.sessions, sessionId, (cur) => ({ ...cur, reviewed: true })),
+          set((state) => ({
+            sessions: withSession(state.sessions, sessionId, (session) => ({ ...session, reviewed: true })),
           })),
 
+        // Hentikan langsung terlihat di admin tanpa menunggu tab kandidat.
         stop: (sessionId) =>
-          set((s) => ({
-            sessions: withSession(s.sessions, sessionId, (cur) => ({ ...cur, forceStop: true })),
+          set((state) => ({
+            sessions: withSession(state.sessions, sessionId, (session) =>
+              session.status === "berlangsung"
+                ? { ...session, status: "dihentikan", endedAt: now(), forceStop: true }
+                : session,
+            ),
           })),
+
+        clearActive: () => set({ activeId: "", notice: "" }),
       };
     },
     {
-      name: "rise-demo",
+      name: "rise-sessions",
+      version: 3,
       skipHydration: true,
-      partialize: (s) => ({ sessions: s.sessions, activeId: s.activeId }),
+      partialize: (state) => ({ sessions: state.sessions, activeId: state.activeId }),
+      migrate: (persistedState) => {
+        const value = (persistedState ?? {}) as Partial<PersistedState>;
+        const sessions = sanitizeSessions(value.sessions);
+        const activeId = value.activeId && sessions[value.activeId] ? value.activeId : "";
+        return { sessions, activeId };
+      },
     },
   ),
 );
 
 // Dipanggil sekali saat halaman pertama dimuat.
 export const hydrate = async () => {
-  await useStore.persist.rehydrate();
-  if (Object.keys(useStore.getState().sessions).length === 0) {
-    useStore.setState({ sessions: seedSessions() });
+  // Kunci lama berisi data demo. Hapus agar panel admin benar-benar bersih.
+  try {
+    localStorage.removeItem("rise-demo");
+  } catch {
+    // Penyimpanan bisa diblokir oleh mode privat; hidrasi tetap dilanjutkan.
   }
-  useStore.setState({ hydrated: true });
+
+  await useStore.persist.rehydrate();
+
+  const state = useStore.getState();
+  const sessions = sanitizeSessions(state.sessions);
+  const activeId = state.activeId && sessions[state.activeId] ? state.activeId : "";
+
+  useStore.setState({ sessions, activeId, hydrated: true });
 };

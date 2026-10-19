@@ -2,43 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { config } from "./config";
-import { attach, getCamera, getScreen, grab, players, stopStreams, streams } from "./media";
+import { attach, getCamera, getScreen, grab, mediaIssue, players, stopStreams, streams } from "./media";
 import { startFaceWatch } from "./face";
-import { saveLive, saveSnap } from "./snap";
+import { riskScore } from "./risk";
+import { saveHist, saveLive, saveSnap } from "./snap";
 import { useStore } from "./store";
-import type { ViolationType } from "./violations";
+import { violationLabel, violationWeight, type ViolationType } from "./violations";
 
 export type Blocked = "fullscreen" | "camera" | "screen" | null;
-export type ProctorAlert = { id: string; text: string; critical: boolean };
 
-// Nama enum asli dari proctor-sdk, dipetakan ke tipe aplikasi.
-const SDK_MAP: Record<string, ViolationType> = {
-  NO_FACE: "NO_FACE",
-  MULTIPLE_FACES: "MULTIPLE_FACES",
-  FULLSCREEN_EXIT: "FULLSCREEN_EXIT",
-  TAB_SWITCH: "TAB_SWITCH",
-  COPY_PASTE_ATTEMPT: "COPY_PASTE",
-  MULTIPLE_SCREENS: "MULTIPLE_SCREENS",
+export type ProctorAlert = {
+  id: string;
+  type: ViolationType;
+  title: string;
+  text: string;
+  critical: boolean;
 };
 
-const blockedKey = (e: KeyboardEvent) => {
-  const k = e.key.toLowerCase();
-  if (e.key === "F12") return true;
-  if (e.ctrlKey && e.shiftKey && ["i", "j", "c"].includes(k)) return true;
-  if (e.ctrlKey && ["u", "s", "p"].includes(k)) return true;
+const blockedKey = (event: KeyboardEvent) => {
+  const key = event.key.toLowerCase();
+  if (event.key === "F12") return true;
+  if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) return true;
+  if (event.ctrlKey && ["u", "s", "p"].includes(key)) return true;
   return false;
 };
 
-const faceEngine = () =>
-  new URLSearchParams(location.search).get("face") === "sdk" ? "sdk" : config.faceEngine;
-
 // Cabut webcam dan penghentian berbagi dari bar browser keduanya membuat track
 // berakhir atau ter-mute, jadi keduanya dipantau di sini.
-const watchTrack = (
-  stream: MediaStream | undefined,
-  down: () => void,
-  up: () => void,
-) => {
+const watchTrack = (stream: MediaStream | undefined, down: () => void, up: () => void) => {
   const track = stream?.getVideoTracks()[0];
   if (!track) return;
   track.addEventListener("ended", down);
@@ -51,15 +42,25 @@ const watchTrack = (
   };
 };
 
-export const useProctor = (sessionId: string, containerRef: React.RefObject<HTMLDivElement | null>) => {
-  const addViolation = useStore((s) => s.addViolation);
-  const closeViolation = useStore((s) => s.closeViolation);
+export const useProctor = (sessionId: string) => {
+  const addViolation = useStore((state) => state.addViolation);
+  const closeViolation = useStore((state) => state.closeViolation);
 
   const [blocked, setBlocked] = useState<Blocked>(null);
+  const [restoreError, setRestoreError] = useState("");
   const [unfocused, setUnfocused] = useState(false);
   const [faces, setFaces] = useState(0);
   const [alert, setAlert] = useState<ProctorAlert | null>(null);
   const [cam, setCam] = useState<MediaStream | undefined>(() => streams.cam);
+  const [screenStream, setScreenStream] = useState<MediaStream | undefined>(() => streams.screen);
+  const blockedRef = useRef<Blocked>(null);
+  // Dialog izin kamera/layar dapat mengeluarkan browser dari fullscreen.
+  // Selama jendela ini, event fullscreenchange tidak dicatat sebagai pelanggaran.
+  const suppressFullscreenUntil = useRef(0);
+
+  useEffect(() => {
+    blockedRef.current = blocked;
+  }, [blocked]);
 
   const shot = useCallback((key: "cam" | "screen") => {
     const video = players[key];
@@ -70,17 +71,16 @@ export const useProctor = (sessionId: string, containerRef: React.RefObject<HTML
     (type: ViolationType) => {
       const id = addViolation(type);
       if (!id) return;
-      const total = useStore.getState().sessions[sessionId]?.violations.length ?? 0;
-      const left = config.maxViolations - total;
+      const violations = useStore.getState().sessions[sessionId]?.violations ?? [];
+      const points = violationWeight[type];
       setAlert({
         id,
-        critical: left <= 1,
-        text:
-          left <= 1
-            ? "Satu pelanggaran lagi sebelum tes dihentikan"
-            : `Pelanggaran ${total} dari ${config.maxViolations}`,
+        type,
+        title: violationLabel[type],
+        critical: points >= 3,
+        text: `+${points} poin pelanggaran · total ${riskScore(violations)}`,
       });
-      if (total <= config.maxSnapshots) {
+      if (violations.length <= config.maxSnapshots) {
         void saveSnap(id, { cam: shot("cam"), screen: shot("screen") });
       }
     },
@@ -90,7 +90,7 @@ export const useProctor = (sessionId: string, containerRef: React.RefObject<HTML
   // Tutup penyebab hanya kalau itu yang sedang memblokir layar.
   const release = useCallback(
     (cause: Blocked, type: ViolationType) => {
-      setBlocked((cur) => (cur === cause ? null : cur));
+      setBlocked((current) => (current === cause ? null : current));
       closeViolation(type);
     },
     [closeViolation],
@@ -118,85 +118,82 @@ export const useProctor = (sessionId: string, containerRef: React.RefObject<HTML
         () => release("screen", "SCREEN_SHARE_STOPPED"),
       ),
     ];
-    unwatch.current = offs.filter((off) => off !== undefined);
+    unwatch.current = offs.filter((off): off is () => void => off !== undefined);
   }, [report, release]);
 
   const clearAlert = useCallback(() => setAlert(null), []);
 
   const restore = useCallback(async () => {
+    if (!blocked) return;
+    setRestoreError("");
     const cause = blocked;
-    if (cause === "fullscreen") await document.documentElement.requestFullscreen();
-    if (cause === "camera") {
-      await getCamera();
-      setCam(streams.cam);
-      release(cause, "CAMERA_OFF");
+
+    try {
+      if (cause === "camera" || cause === "screen") {
+        // Izin kamera/layar akan membuka dialog browser yang dapat keluar
+        // dari fullscreen; jangan hitung itu sebagai pelanggaran baru.
+        suppressFullscreenUntil.current = Date.now() + 5000;
+      }
+      if (cause === "fullscreen") {
+        await document.documentElement.requestFullscreen();
+        if (!document.fullscreenElement) throw new Error("Layar penuh tidak aktif");
+      }
+      if (cause === "camera") {
+        await getCamera();
+        setCam(streams.cam);
+        release(cause, "CAMERA_OFF");
+      }
+      if (cause === "screen") {
+        await getScreen();
+        setScreenStream(streams.screen);
+        release(cause, "SCREEN_SHARE_STOPPED");
+      }
+      if (cause === "camera" || cause === "screen") {
+        // Event fullscreenchange dari dialog izin bisa datang terlambat.
+        suppressFullscreenUntil.current = Date.now() + 2000;
+      }
+      // Track baru hasil pemulihan harus dipantau lagi.
+      rewatch();
+      // Jika dialog izin membuat fullscreen hilang, minta layar penuh lagi
+      // lewat overlay tanpa mencatat pelanggaran.
+      setBlocked(cause !== "fullscreen" && !document.fullscreenElement ? "fullscreen" : null);
+    } catch (error) {
+      setRestoreError(mediaIssue(error, cause === "camera" ? "camera" : "screen").message);
     }
-    if (cause === "screen") {
-      await getScreen();
-      release(cause, "SCREEN_SHARE_STOPPED");
-    }
-    setBlocked(null);
-    // Track baru hasil pemulihan harus dipantau lagi.
-    rewatch();
   }, [blocked, release, rewatch]);
+
+  // Deteksi wajah selalu mengikuti stream kamera terbaru. Saat kamera dipulihkan,
+  // stream diganti dan pemantauan wajah harus dimulai ulang di video baru.
+  useEffect(() => {
+    if (!sessionId || !cam) return;
+
+    const camVideo = attach("cam");
+    if (!camVideo) return;
+
+    return startFaceWatch(camVideo, ({ violation, faces: count }) => {
+      setFaces(count);
+      if (violation) {
+        report(violation);
+        return;
+      }
+      closeViolation("NO_FACE");
+      closeViolation("MULTIPLE_FACES");
+      closeViolation("LOOK_AWAY");
+    });
+  }, [sessionId, cam, report, closeViolation]);
+
+  // Lampirkan ulang video tersembunyi saat berbagi layar dipulihkan, supaya
+  // snapshot layar tidak memakai elemen video dari stream yang sudah berhenti.
+  useEffect(() => {
+    if (!sessionId || !screenStream) return;
+    attach("screen");
+  }, [sessionId, screenStream]);
 
   useEffect(() => {
     if (!sessionId) return;
-    const engine = faceEngine();
-    const camVideo = attach("cam");
-    attach("screen");
 
-    let stopFace: (() => void) | undefined;
-    let sdk: { start: () => Promise<void>; destroy: () => void } | undefined;
-
-    if (camVideo && engine !== "sdk") {
-      stopFace = startFaceWatch(camVideo, ({ violation, faces: n }) => {
-        setFaces(n);
-        if (violation) {
-          report(violation);
-          return;
-        }
-        closeViolation("NO_FACE");
-        closeViolation("MULTIPLE_FACES");
-        closeViolation("LOOK_AWAY");
-      });
-    }
-
-    const initSdk = async () => {
-      const container = containerRef.current;
-      if (!container) return;
-      const { default: ProctorSDK } = await import("proctor-sdk");
-      sdk = new ProctorSDK({
-        containerElement: container,
-        enabledChecks: {
-          fullscreen: true,
-          tabSwitch: true,
-          copyPaste: true,
-          multipleScreens: true,
-          faceDetection: engine === "sdk",
-        },
-        callbacks: {
-          onStatusChange: () => {},
-          onWebcamStreamReady: () => setFaces(1),
-          onViolation: ({ type, active }) => {
-            const mapped = SDK_MAP[type];
-            if (!mapped) return;
-            if (!active) {
-              closeViolation(mapped);
-              if (mapped === "FULLSCREEN_EXIT") setBlocked((cur) => (cur === "fullscreen" ? null : cur));
-              return;
-            }
-            report(mapped);
-            if (mapped === "FULLSCREEN_EXIT") setBlocked("fullscreen");
-          },
-        },
-      });
-      await sdk.start();
-    };
-    void initSdk();
-
-    // SDK hanya memeriksa layar tambahan sekali saat start, jadi listen juga
-    // event change supaya monitor yang ditambahkan saat tes berjalan ikut terhitung.
+    // Periksa layar tambahan sekali saat mulai, lalu ikuti perubahan monitor
+    // supaya layar yang ditambahkan saat tes berjalan ikut terhitung.
     const onScreens = () => {
       if (!("isExtended" in screen)) return;
       if (screen.isExtended) report("MULTIPLE_SCREENS");
@@ -204,33 +201,38 @@ export const useProctor = (sessionId: string, containerRef: React.RefObject<HTML
     };
     const onBlur = () => {
       setUnfocused(true);
+      // Dialog izin kamera/layar saat pemulihan juga memicu blur; jangan
+      // menambah pelanggaran baru saat overlay sedang meminta akses.
+      if (blockedRef.current) return;
       report("WINDOW_BLUR");
     };
     const onFocus = () => setUnfocused(false);
-    const onClipboard = (e: Event) => {
-      e.preventDefault();
+    const onClipboard = (event: Event) => {
+      event.preventDefault();
       report("COPY_PASTE");
     };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!blockedKey(e)) return;
-      e.preventDefault();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!blockedKey(event)) return;
+      event.preventDefault();
       report("SHORTCUT");
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "PrintScreen") report("SHORTCUT");
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "PrintScreen") report("SHORTCUT");
     };
-    // Mandiri, tidak bergantung pada callback SDK: naik dan turunnya overlay
-    // beserta episode pelanggaran harus selalu simetris di listener ini.
+    // Naik dan turunnya overlay beserta episode pelanggaran harus selalu
+    // simetris di listener fullscreenchange.
     const onFullscreen = () => {
       if (document.fullscreenElement) {
-        setBlocked((cur) => (cur === "fullscreen" ? null : cur));
+        setBlocked((current) => (current === "fullscreen" ? null : current));
         closeViolation("FULLSCREEN_EXIT");
         return;
       }
+      // Abaikan keluarnya fullscreen akibat dialog izin saat pemulihan.
+      if (Date.now() < suppressFullscreenUntil.current) return;
       setBlocked("fullscreen");
       report("FULLSCREEN_EXIT");
     };
-    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    const onUnload = (event: BeforeUnloadEvent) => event.preventDefault();
 
     rewatch();
 
@@ -249,12 +251,13 @@ export const useProctor = (sessionId: string, containerRef: React.RefObject<HTML
 
     const live = window.setInterval(() => {
       if (useStore.getState().sessions[sessionId]?.status !== "berlangsung") return;
-      void saveLive(sessionId, { cam: shot("cam"), screen: shot("screen") });
+      const at = Date.now();
+      const snap = { cam: shot("cam"), screen: shot("screen"), at };
+      void saveLive(sessionId, snap);
+      void saveHist(sessionId, { ...snap, at });
     }, config.snapshotEveryMs);
 
     return () => {
-      stopFace?.();
-      sdk?.destroy();
       window.clearInterval(live);
       unwatch.current.forEach((off) => off());
       window.removeEventListener("blur", onBlur);
@@ -273,7 +276,7 @@ export const useProctor = (sessionId: string, containerRef: React.RefObject<HTML
       if (document.fullscreenElement) void document.exitFullscreen();
       navigator.keyboard?.unlock?.();
     };
-  }, [sessionId, containerRef, report, release, rewatch, shot, closeViolation]);
+  }, [sessionId, report, release, rewatch, shot, closeViolation]);
 
-  return { blocked, unfocused, restore, faces, alert, cam, clearAlert };
+  return { blocked, restoreError, unfocused, restore, faces, alert, cam, clearAlert };
 };

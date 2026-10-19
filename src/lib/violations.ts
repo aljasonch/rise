@@ -9,8 +9,7 @@ export type ViolationType =
   | "SHORTCUT"
   | "MULTIPLE_SCREENS"
   | "CAMERA_OFF"
-  | "SCREEN_SHARE_STOPPED"
-  | "RELOAD";
+  | "SCREEN_SHARE_STOPPED";
 
 export type Violation = {
   id: string;
@@ -32,9 +31,13 @@ export const violationLabel: Record<ViolationType, string> = {
   MULTIPLE_SCREENS: "Layar tambahan terdeteksi",
   CAMERA_OFF: "Kamera terputus",
   SCREEN_SHARE_STOPPED: "Berbagi layar dihentikan",
-  RELOAD: "Halaman dimuat ulang",
 };
 
+// Kriteria skor: total poin = Σ (bobot tipe × jumlah kejadian).
+// 3 = orang lain di frame, meninggalkan konteks tes, atau mematikan pengawasan.
+// 2 = keluar dari wadah tes yang dikunci.
+// 1 = gangguan pendeteksian atau percobaan yang masih di dalam halaman.
+// Durasi episode, urutan subtes, dan waktu kejadian tidak memengaruhi poin.
 export const violationWeight: Record<ViolationType, number> = {
   NO_FACE: 1,
   MULTIPLE_FACES: 3,
@@ -47,10 +50,9 @@ export const violationWeight: Record<ViolationType, number> = {
   MULTIPLE_SCREENS: 3,
   CAMERA_OFF: 3,
   SCREEN_SHARE_STOPPED: 3,
-  RELOAD: 2,
 };
 
 // Kejadian sesaat tidak punya episode, jadi langsung ditutup saat dicatat.
-const instant: ViolationType[] = ["COPY_PASTE", "SHORTCUT", "WINDOW_BLUR", "RELOAD"];
+const instant: ViolationType[] = ["COPY_PASTE", "SHORTCUT", "WINDOW_BLUR"];
 
 export const isInstant = (type: ViolationType) => instant.includes(type);

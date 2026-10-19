@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RISE
 
-## Getting Started
+Asesmen kandidat dengan pemantauan kamera dan layar. Aplikasi ini berjalan
+sepenuhnya di browser: sesi, jawaban, dan snapshot disimpan di perangkat yang
+sama, tanpa backend.
 
-First, run the development server:
+## Menjalankan
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka `http://localhost:3000`. Kamera dan berbagi layar membutuhkan secure
+context, jadi gunakan `localhost` atau HTTPS. Untuk HTTPS lokal:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run dev:https
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Model MediaPipe dan aset WASM sudah disalin ke `public/mediapipe` oleh
+`postinstall`. Untuk mengunduh ulang model:
 
-## Learn More
+```bash
+npm run models
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Alur
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Identitas** — nama, email, dan posisi diisi kandidat. Data ini yang muncul
+   di panel admin.
+2. **Persiapan** — pemeriksaan browser, layar tunggal, kamera fisik, wajah, dan
+   berbagi seluruh layar. Kamera virtual seperti OBS, ManyCam, atau DroidCam
+   ditolak. Tes tidak dapat dimulai tanpa kamera fisik.
+3. **Tes** — empat subtes: Numerik (10 soal), Logika (8), Verbal (8), dan
+   Kepribadian (12). Timer per subtes, palet soal, dan catatan pengawasan tampil
+   selama pengerjaan.
+4. **Selesai** — ringkasan durasi, jawaban, dan catatan pengawasan. Kandidat
+   dapat memulai sesi baru tanpa menghapus sesi lama.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Panel admin di `/admin` hanya menampilkan sesi yang benar-benar dikerjakan.
+Tidak ada data seed atau data demo. Sesi yang sudah selesai menampilkan kamera
+dan layar dari arsip snapshot; sesi berjalan memakai snapshot langsung.
 
-## Deploy on Vercel
+## Pemeriksaan
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run lint
+npm run typecheck
+npm run check
+npm run build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`npm run check` menjalankan pemeriksaan data soal, penyaring kamera virtual, dan
+perhitungan sudut wajah tanpa browser.
+
+## Penyimpanan
+
+- Sesi dan identitas: `localStorage` dengan kunci `rise-sessions`.
+- Snapshot kamera dan layar: IndexedDB (`keyval-store`), dibatasi
+  `config.maxSnapshots` per sesi.
+- Kunci lama `rise-demo` dihapus saat hidrasi supaya data demo tidak muncul lagi.
+
+Menghapus data situs akan menghapus seluruh riwayat sesi dan snapshot.
+
+## Struktur
+
+```
+src/app/test          alur kandidat
+src/app/admin         daftar dan detail sesi
+src/components/test   intro, persiapan, pengerjaan, overlay, watermark
+src/components/admin  header, pratinjau snapshot, lightbox
+src/data/test.ts      bank soal dan kunci jawaban
+src/lib/cameras.ts    klasifikasi dan penyaringan kamera virtual
+src/lib/media.ts      akses kamera/layar dan penanganan galat
+src/lib/score.ts      skor kognitif per subtes
+```

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Kamera dan proctor-sdk tidak boleh diinisialisasi dua kali saat dev.
+  // Kamera dan pemantauan tidak boleh diinisialisasi dua kali saat dev.
   reactStrictMode: false,
 };
 

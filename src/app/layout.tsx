@@ -6,7 +6,8 @@ import "./globals.css";
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "RISE Psikotes",
+  title: "RISE | Psikotes",
+  description: "Psikotes untuk FIFGROUP",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

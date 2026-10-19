@@ -1,21 +1,28 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-bg: var(--bg);
+  --color-canvas: var(--canvas);
   --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
-  --color-warn: var(--warn);
-  --color-ok: var(--ok);
+  --color-danger-strong: var(--danger-strong);
+  --color-media: var(--media);
 
   --font-sans: var(--font-geist-sans);
-  --radius-input: 8px;
-  --radius-card: 12px;
+  --radius-input: 10px;
+  --radius-card: 16px;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-float: 0 24px 60px -28px rgb(15 23 42 / 0.35);
 
-  /* Nilainya sama dengan config.motionMs, CSS tidak bisa membaca file TS. */
-  --animate-fade: fade 150ms ease-out;
+  /* Nilainya sama dengan config.toastMs; CSS tidak bisa membaca file TS. */
+  --animate-fade: fade 160ms ease-out;
 
   @keyframes fade {
     from {
@@ -30,23 +37,52 @@
 }
 
 :root {
-  --bg: #fafafa;
+  --canvas: #f3f4f5;
   --surface: #ffffff;
-  --line: #e5e5e5;
-  --ink: #171717;
-  --muted: #737373;
-  --danger: #dc2626;
-  --warn: #d97706;
-  --ok: #15803d;
+  --surface-muted: #f7f8f8;
+  --line: #e3e5e7;
+  --line-strong: #c9ced2;
+  --ink: #161b20;
+  --muted: #606a73;
+  --faint: #99a1a8;
+
+  /* Satu aksen desaturasi. Tidak ada biru terang, hijau, atau amber. */
+  --accent: #31506b;
+  --accent-soft: #edf1f4;
+
+  /* Merah muted hanya untuk galat dan aksi destruktif. */
+  --danger: #8d3b34;
+  --danger-strong: #722e29;
+
+  /* Latar media netral, bukan biru malam. */
+  --media: #111416;
+}
+
+html {
+  background: var(--canvas);
 }
 
 body {
-  background: var(--bg);
+  min-height: 100%;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--accent-soft);
   color: var(--ink);
 }
 
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -61,6 +97,8 @@ body {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -407,7 +407,7 @@ export default function Run() {
               {faces === 1
                 ? "Satu wajah terdeteksi di kamera."
                 : faces > 1
-                  ? `${faces} wajah terdeteksi. Hanya kandidat yang boleh berada di depan kamera.`
+                  ? `${faces} wajah terdeteksi. Hanya peserta yang boleh berada di depan kamera.`
                   : "Wajah tidak terdeteksi. Posisikan wajah di depan kamera."}
             </p>
 

@@ -111,7 +111,7 @@ const sanitizeSessions = (value: unknown): Record<string, Session> => {
 export const useStore = create<State>()(
   persist(
     (set, get) => {
-      // Semua aksi kandidat bekerja pada sesi aktif.
+      // Semua aksi peserta bekerja pada sesi aktif.
       const editActive = (fn: (session: Session) => Session) => {
         const id = get().activeId;
         set((state) => ({ sessions: withSession(state.sessions, id, fn) }));
@@ -218,7 +218,7 @@ export const useStore = create<State>()(
             sessions: withSession(state.sessions, sessionId, (session) => ({ ...session, reviewed: true })),
           })),
 
-        // Hentikan langsung terlihat di admin tanpa menunggu tab kandidat.
+        // Hentikan langsung terlihat di admin tanpa menunggu tab peserta.
         stop: (sessionId) =>
           set((state) => ({
             sessions: withSession(state.sessions, sessionId, (session) =>

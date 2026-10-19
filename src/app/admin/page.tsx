@@ -88,7 +88,8 @@ export default function Page() {
     return (
       session.candidate.name.toLowerCase().includes(normalizedQuery) ||
       session.candidate.position.toLowerCase().includes(normalizedQuery) ||
-      session.candidate.email.toLowerCase().includes(normalizedQuery)
+      session.candidate.email.toLowerCase().includes(normalizedQuery) ||
+      session.candidate.verificationCode?.toLowerCase().includes(normalizedQuery)
     );
   });
 
@@ -102,19 +103,15 @@ export default function Page() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted">
-              Pusat pemantauan
+              Admin Panel
             </p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Sesi kandidat</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-              Hanya sesi yang benar-benar dikerjakan kandidat yang ditampilkan di sini. Data
-              tersimpan di browser ini.
-            </p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Sesi peserta</h1>
           </div>
           <Link
             href="/test"
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-input border border-ink bg-ink px-4 py-2.5 text-sm font-medium text-white transition-colors hover:border-neutral-800 hover:bg-neutral-800"
           >
-            Buka alur kandidat
+            Buka alur peserta
             <FiArrowRight aria-hidden size={16} />
           </Link>
         </div>
@@ -141,7 +138,7 @@ export default function Page() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cari nama, posisi, atau email"
+              placeholder="Cari nama, posisi, email, atau kode"
               aria-label="Cari sesi"
               className="w-full rounded-input border border-line bg-surface py-2.5 pl-9 pr-9 text-sm transition-colors placeholder:text-faint hover:border-line-strong focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/10"
             />
@@ -183,13 +180,13 @@ export default function Page() {
             <EmptyState
               icon={<FiUsers aria-hidden size={22} />}
               title="Belum ada sesi"
-              description="Panel ini hanya menampilkan data nyata. Sesi akan muncul setelah kandidat mengisi identitas dan menyelesaikan tes di browser ini."
+              description="Belum ada peserta yang memulai sesi."
               action={
                 <Link
                   href="/test"
                   className="inline-flex items-center gap-2 rounded-input border border-ink bg-ink px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
                 >
-                  Mulai sesi kandidat
+                  Mulai sesi peserta
                   <FiArrowRight aria-hidden size={16} />
                 </Link>
               }
@@ -217,7 +214,7 @@ export default function Page() {
                 <table className="w-full min-w-[860px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-line bg-surface-muted text-left text-[11px] uppercase tracking-[0.06em] text-muted">
-                      <th className="px-4 py-2.5 font-medium">Kandidat</th>
+                      <th className="px-4 py-2.5 font-medium">peserta</th>
                       <th className="px-4 py-2.5 font-medium">Status</th>
                       <th className="px-4 py-2.5 font-medium">Progres</th>
                       <th className="px-4 py-2.5 font-medium">Skor</th>
@@ -308,7 +305,6 @@ export default function Page() {
         </div>
 
         <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-muted">
-          <FiShield aria-hidden size={14} className="mt-0.5 shrink-0" />
           Sesi dan tangkapan disimpan lokal di browser ini. Menghapus data situs akan menghapus
           seluruh riwayat.
         </p>

@@ -447,6 +447,12 @@ function IdentityCard({ session, now }: { session: Session; now: number }) {
           <dd className="text-right font-medium">{session.candidate.position}</dd>
         </div>
         <div className="flex items-start justify-between gap-3">
+          <dt className="text-muted">Kode verifikasi</dt>
+          <dd className="font-mono text-[11px] text-ink">
+            {session.candidate.verificationCode || "—"}
+          </dd>
+        </div>
+        <div className="flex items-start justify-between gap-3">
           <dt className="text-muted">Mulai</dt>
           <dd className="text-right tabular-nums">{dateTime(session.startedAt)}</dd>
         </div>
@@ -742,7 +748,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 <div>
                   <h2 className="text-sm font-semibold">Pemantauan</h2>
                   <p className="mt-0.5 text-xs text-muted">
-                    Pratinjau kamera dan seluruh layar kandidat.
+                    Pratinjau kamera dan seluruh layar peserta.
                   </p>
                 </div>
                 {running ? (
@@ -813,7 +819,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       {confirmStop && (
         <Modal
           title="Hentikan sesi ini?"
-          description="Kandidat akan keluar dari tes dan sesi ditandai dihentikan. Jawaban dan tangkapan yang sudah tersimpan tetap dapat ditinjau."
+          description="peserta akan keluar dari tes dan sesi ditandai dihentikan. Jawaban dan tangkapan yang sudah tersimpan tetap dapat ditinjau."
           onClose={() => setConfirmStop(false)}
           actions={
             <>

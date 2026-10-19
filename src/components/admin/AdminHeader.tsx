@@ -10,11 +10,11 @@ export function AdminHeader() {
         <nav className="flex items-center gap-1.5">
           <Link
             href="/test"
-            aria-label="Alur kandidat"
+            aria-label="Alur peserta"
             className="inline-flex items-center gap-2 rounded-input px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-muted hover:text-ink"
           >
             <FiUser aria-hidden size={15} />
-            <span className="hidden sm:inline">Alur kandidat</span>
+            <span className="hidden sm:inline">Alur peserta</span>
           </Link>
           <Link
             href="/admin"

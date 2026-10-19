@@ -2,16 +2,26 @@ export type Identity = {
   name: string;
   email: string;
   position: string;
+  verificationCode: string;
 };
 
 export type IdentityErrors = Partial<Record<keyof Identity, string>>;
 
-export const emptyIdentity: Identity = { name: "", email: "", position: "" };
+// Kode statis sementara untuk verifikasi peserta.
+export const VERIFICATION_CODE = "ABC123";
+
+export const emptyIdentity: Identity = {
+  name: "",
+  email: "",
+  position: "",
+  verificationCode: "",
+};
 
 export const normalizeIdentity = (identity: Identity): Identity => ({
   name: identity.name.trim(),
   email: identity.email.trim().toLowerCase(),
   position: identity.position.trim(),
+  verificationCode: identity.verificationCode.replace(/\s+/g, "").toUpperCase(),
 });
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -38,6 +48,12 @@ export const validateIdentity = (identity: Identity): IdentityErrors => {
     errors.position = "Posisi minimal 2 karakter.";
   } else if (value.position.length > 80) {
     errors.position = "Posisi maksimal 80 karakter.";
+  }
+
+  if (!value.verificationCode) {
+    errors.verificationCode = "Kode verifikasi wajib diisi.";
+  } else if (value.verificationCode !== VERIFICATION_CODE) {
+    errors.verificationCode = "Kode verifikasi tidak sesuai.";
   }
 
   return errors;

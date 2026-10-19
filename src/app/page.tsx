@@ -119,7 +119,7 @@ export default function Page() {
           <RoleCard
             href="/test"
             icon={FiUser}
-            title="Mulai sebagai kandidat"
+            title="Mulai sebagai peserta"
             description="Isi identitas, siapkan kamera dan layar, lalu kerjakan asesmen."
             primary
           />

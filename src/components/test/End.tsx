@@ -141,7 +141,7 @@ export default function End() {
           )}
 
           <p className="mt-6 rounded-input border border-line bg-surface-muted p-3 text-xs leading-relaxed text-muted">
-            Nilai kognitif tidak ditampilkan di halaman kandidat. Hasil lengkap tersedia untuk
+            Nilai kognitif tidak ditampilkan di halaman peserta. Hasil lengkap tersedia untuk
             pengawas di panel admin.
           </p>
 

@@ -337,7 +337,7 @@ export function EmptyState({
     <div
       className={`flex flex-col items-center justify-center rounded-card border border-dashed border-line bg-surface-muted/70 px-6 py-12 text-center ${className}`}
     >
-      <span className="grid size-12 place-items-center rounded-full border border-line bg-surface text-muted">
+      <span className="grid size-12 place-items-center text-muted">
         {icon}
       </span>
       <h3 className="mt-4 text-sm font-semibold">{title}</h3>

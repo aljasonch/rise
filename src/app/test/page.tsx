@@ -38,7 +38,7 @@ export default function Page() {
   const [needsFullscreen, setNeedsFullscreen] = useState(false);
   const now = useNow(1000);
 
-  // Jika kandidat meninggalkan halaman sebelum tes dimulai, jangan biarkan
+  // Jika peserta meninggalkan halaman sebelum tes dimulai, jangan biarkan
   // kamera dan layar tetap aktif di latar belakang.
   useEffect(
     () => () => {
@@ -53,7 +53,7 @@ export default function Page() {
     if (!session) {
       setPhase("intro");
       // Sesi baru harus dimulai dengan identitas kosong, bukan identitas
-      // kandidat sebelumnya yang masih tersimpan di state halaman.
+      // peserta sebelumnya yang masih tersimpan di state halaman.
       setIdentity(emptyIdentity);
     } else if (session.status !== "berlangsung") setPhase("end");
     else if (phase === "intro") setPhase("resume");

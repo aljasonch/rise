@@ -57,7 +57,12 @@ assert.equal(totalQuestions, 38, "total soal harus 38");
 
 const base: Session = {
   id: "check-data",
-  candidate: { name: "Pemeriksaan Data", email: "data@contoh.id", position: "QA" },
+  candidate: {
+    name: "Pemeriksaan Data",
+    email: "data@contoh.id",
+    position: "QA",
+    verificationCode: "ABC123",
+  },
   status: "selesai",
   startedAt: 0,
   endedAt: 1,

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ChangeEvent, type FormEvent } from "react";
-import { FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiMonitor, FiShield } from "react-icons/fi";
+import { FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiKey, FiMonitor, FiShield } from "react-icons/fi";
 import { Brand } from "@/components/Brand";
 import { Stepper } from "@/components/Stepper";
 import { Button, Card } from "@/components/ui";
@@ -32,7 +32,11 @@ export default function Intro({
   const [errors, setErrors] = useState<IdentityErrors>({});
 
   const update = (key: keyof Identity) => (event: ChangeEvent<HTMLInputElement>) => {
-    setValues((current) => ({ ...current, [key]: event.target.value }));
+    const value =
+      key === "verificationCode"
+        ? event.target.value.replace(/\s+/g, "").toUpperCase()
+        : event.target.value;
+    setValues((current) => ({ ...current, [key]: value }));
     if (errors[key]) {
       setErrors((current) => ({ ...current, [key]: undefined }));
     }
@@ -71,9 +75,9 @@ export default function Intro({
         <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-8">
           <Card className="p-6 sm:p-8">
             <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted">Langkah 1 dari 3</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Identitas kandidat</h1>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Identitas peserta</h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-              Data ini dipakai pengawas untuk mencocokkan sesi dengan kandidat. Pastikan
+              Data ini dipakai pengawas untuk mencocokkan sesi dengan peserta. Pastikan
               penulisannya sama dengan dokumen resmi.
             </p>
 
@@ -146,6 +150,32 @@ export default function Intro({
                 )}
               </div>
 
+              <div>
+                <label htmlFor="candidate-verificationCode" className="mb-1.5 block text-sm font-medium">
+                  Kode verifikasi
+                </label>
+                <input
+                  id="candidate-verificationCode"
+                  name="verificationCode"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={12}
+                  value={values.verificationCode}
+                  onChange={update("verificationCode")}
+                  aria-invalid={Boolean(errors.verificationCode)}
+                  aria-describedby={
+                    errors.verificationCode ? "candidate-verificationCode-error" : undefined
+                  }
+                  placeholder="Masukkan kode verifikasi"
+                  className={`${inputClass(Boolean(errors.verificationCode))} font-mono uppercase tracking-[0.16em]`}
+                />
+                {errors.verificationCode && (
+                  <p id="candidate-verificationCode-error" className="mt-1.5 text-xs text-danger">
+                    {errors.verificationCode}
+                  </p>
+                )}
+              </div>
+
               <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs leading-relaxed text-muted">
                   Identitas tersimpan hanya di browser ini.
@@ -195,6 +225,11 @@ export default function Intro({
               <h2 className="text-sm font-semibold">Sebelum mulai</h2>
               <ul className="mt-3 space-y-3">
                 {[
+                  {
+                    icon: FiKey,
+                    title: "Kode verifikasi peserta",
+                    text: "Masukkan kode yang diberikan pengawas sebelum sesi dimulai.",
+                  },
                   {
                     icon: FiMonitor,
                     title: "Komputer dengan Chrome atau Edge",

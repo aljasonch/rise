@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ChangeEvent, type FormEvent } from "react";
-import { FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiKey, FiMonitor, FiShield } from "react-icons/fi";
+import { FiArrowLeft, FiArrowRight, FiCheck, FiClock, FiKey, FiLayers, FiMonitor } from "react-icons/fi";
 import { Brand } from "@/components/Brand";
 import { Stepper } from "@/components/Stepper";
 import { Button, Card } from "@/components/ui";
@@ -232,18 +232,18 @@ export default function Intro({
                   },
                   {
                     icon: FiMonitor,
-                    title: "Komputer dengan Chrome atau Edge",
-                    text: "Tes berjalan layar penuh dan membutuhkan API layar tambahan.",
+                    title: "Komputer atau laptop",
+                    text: "Disarankan menggunakan komputer atau laptop untuk kenyamanan membaca soal.",
                   },
                   {
-                    icon: FiCamera,
-                    title: "Kamera fisik yang aktif",
-                    text: "Kamera virtual seperti OBS atau ManyCam tidak diterima.",
+                    icon: FiClock,
+                    title: "Waktu pengerjaan",
+                    text: `Total durasi ${totalMinutes} menit terbagi dalam ${sections.length} subtes berbeda.`,
                   },
                   {
-                    icon: FiShield,
-                    title: "Izin layar dan kamera",
-                    text: "Anda akan memilih seluruh layar dan memberi izin kamera.",
+                    icon: FiLayers,
+                    title: "Pengerjaan bertahap",
+                    text: "Subtes harus diselesaikan secara berurutan dan tidak dapat diulang.",
                   },
                 ].map(({ icon: Icon, title, text }) => (
                   <li key={title} className="flex items-start gap-3">

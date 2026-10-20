@@ -69,7 +69,6 @@ const base: Session = {
   section: sections.length - 1,
   deadline: 1,
   answers: {},
-  violations: [],
   reviewed: false,
   forceStop: false,
 };

@@ -9,9 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --incremental false",
-    "check": "node scripts/check-pose.ts && node scripts/check-data.ts && node scripts/check-cameras.ts",
-    "postinstall": "node -e \"require('fs').cpSync('node_modules/@mediapipe/tasks-vision/wasm','public/mediapipe/wasm',{recursive:true})\"",
-    "models": "node scripts/fetch-model.mjs"
+    "check": "node scripts/check-data.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",

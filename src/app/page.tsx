@@ -4,11 +4,9 @@ import {
   FiArrowRight,
   FiArrowUpRight,
   FiBarChart2,
-  FiCamera,
   FiCheckCircle,
   FiClock,
   FiLayers,
-  FiMonitor,
   FiShield,
   FiUser,
 } from "react-icons/fi";
@@ -101,12 +99,12 @@ export default function Page() {
 
           <div className="mt-8 flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted">
-              <FiCamera aria-hidden size={14} />
-              Kamera fisik saja
+              <FiCheckCircle aria-hidden size={14} />
+              4 Subtes standar
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted">
-              <FiMonitor aria-hidden size={14} />
-              Seluruh layar
+              <FiBarChart2 aria-hidden size={14} />
+              Penilaian otomatis
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted">
               <FiShield aria-hidden size={14} />
@@ -120,14 +118,14 @@ export default function Page() {
             href="/test"
             icon={FiUser}
             title="Mulai sebagai peserta"
-            description="Isi identitas, siapkan kamera dan layar, lalu kerjakan asesmen."
+            description="Isi identitas, konfirmasi persiapan, lalu kerjakan asesmen."
             primary
           />
           <RoleCard
             href="/admin"
             icon={FiBarChart2}
             title="Buka panel admin"
-            description="Tinjau sesi nyata, skor kognitif, pelanggaran, dan tangkapan kamera."
+            description="Tinjau sesi nyata, progres pengerjaan, dan skor kognitif peserta."
           />
 
           <div className="rounded-card border border-line bg-surface-muted p-4 text-xs leading-relaxed text-muted">

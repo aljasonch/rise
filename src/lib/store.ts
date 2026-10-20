@@ -3,7 +3,6 @@ import { persist } from "zustand/middleware";
 import { sections } from "@/data/test";
 import type { Identity } from "./identity";
 import { config } from "./config";
-import { isInstant, type Violation, type ViolationType } from "./violations";
 
 export type Status = "berlangsung" | "selesai" | "waktu_habis" | "dihentikan";
 
@@ -16,7 +15,6 @@ export type Session = {
   section: number;
   deadline: number;
   answers: Record<string, number>;
-  violations: Violation[];
   reviewed: boolean;
   forceStop: boolean;
 };
@@ -38,8 +36,6 @@ type State = {
   start: (candidate: Identity) => void;
   answer: (questionId: string, value: number) => void;
   nextSection: () => void;
-  addViolation: (type: ViolationType) => string | null;
-  closeViolation: (type: ViolationType) => void;
   finish: (status: Status) => void;
   markReviewed: (sessionId: string) => void;
   stop: (sessionId: string) => void;
@@ -63,7 +59,6 @@ const newSession = (candidate: Identity): Session => ({
   section: 0,
   deadline: now() + sections[0].minutes * config.minuteMs,
   answers: {},
-  violations: [],
   reviewed: false,
   forceStop: false,
 });
@@ -80,19 +75,9 @@ const isSession = (value: unknown): value is Session => {
     typeof session.deadline === "number" &&
     Boolean(session.candidate) &&
     typeof session.candidate?.name === "string" &&
-    Array.isArray(session.violations) &&
     Boolean(session.answers)
   );
 };
-
-// Sesi demo lama tidak boleh muncul lagi di panel admin. Penyaringan dilakukan
-// saat migrasi dan sekali lagi saat hidrasi untuk berjaga-jaga.
-const sanitizeSession = (session: Session): Session => ({
-  ...session,
-  // RELOAD sudah tidak dipakai. Data lama yang masih menyimpannya dibersihkan
-  // agar label dan skor tidak menghitung pelanggaran yang sudah dihapus.
-  violations: session.violations.filter((violation) => (violation.type as string) !== "RELOAD"),
-});
 
 const sanitizeSessions = (value: unknown): Record<string, Session> => {
   if (!value || typeof value !== "object") return {};
@@ -103,9 +88,7 @@ const sanitizeSessions = (value: unknown): Record<string, Session> => {
     ),
   ) as Record<string, Session>;
 
-  return Object.fromEntries(
-    Object.entries(sessions).map(([id, session]) => [id, sanitizeSession(session)]),
-  ) as Record<string, Session>;
+  return sessions;
 };
 
 export const useStore = create<State>()(
@@ -156,56 +139,6 @@ export const useStore = create<State>()(
             };
           }),
 
-        // Satu episode dihitung satu kali: diabaikan bila episode yang sama masih terbuka.
-        // Mengembalikan id pelanggaran baru, atau null bila tidak ada yang dicatat.
-        addViolation: (type) => {
-          const id = get().activeId;
-          const session = get().sessions[id];
-          if (!session || session.status !== "berlangsung") return null;
-          const at = now();
-
-          if (session.violations.some((violation) => violation.type === type && !violation.endedAt)) {
-            return null;
-          }
-
-          // Berpindah tab dan kehilangan fokus sering datang bersamaan, dihitung satu kali.
-          if (type === "TAB_SWITCH" || type === "WINDOW_BLUR") {
-            const pair = type === "TAB_SWITCH" ? "WINDOW_BLUR" : "TAB_SWITCH";
-            if (session.violations.some((violation) => violation.type === pair && at - violation.at < config.dedupeMs)) {
-              return null;
-            }
-          }
-
-          const violation: Violation = {
-            id: uid(),
-            type,
-            at,
-            endedAt: isInstant(type) ? at : undefined,
-            snap: true,
-          };
-          set((state) => ({
-            sessions: withSession(state.sessions, id, (current) => ({
-              ...current,
-              violations: [...current.violations, violation],
-            })),
-          }));
-          return violation.id;
-        },
-
-        // Dipanggil tiap frame deteksi wajah, jadi no-op harus benar-benar free.
-        closeViolation: (type) => {
-          const id = get().activeId;
-          const session = get().sessions[id];
-          if (!session || session.status !== "berlangsung") return;
-          if (!session.violations.some((violation) => violation.type === type && !violation.endedAt)) return;
-          editActive((current) => ({
-            ...current,
-            violations: current.violations.map((violation) =>
-              violation.type === type && !violation.endedAt ? { ...violation, endedAt: now() } : violation,
-            ),
-          }));
-        },
-
         finish: (status) =>
           editActive((session) =>
             session.status === "berlangsung"
@@ -233,7 +166,7 @@ export const useStore = create<State>()(
     },
     {
       name: "rise-sessions",
-      version: 3,
+      version: 4,
       skipHydration: true,
       partialize: (state) => ({ sessions: state.sessions, activeId: state.activeId }),
       migrate: (persistedState) => {

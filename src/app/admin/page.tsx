@@ -8,19 +8,17 @@ import {
   FiChevronRight,
   FiClock,
   FiSearch,
-  FiShield,
   FiUsers,
   FiX,
 } from "react-icons/fi";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { Badge, Button, Card, EmptyState, Metric, ProgressBar } from "@/components/ui";
 import { sections, totalQuestions } from "@/data/test";
-import { riskLevel, riskScore, riskTone } from "@/lib/risk";
 import { scoreSession } from "@/lib/score";
 import { statusLabel, useStore, type Status } from "@/lib/store";
 import { useNow } from "@/lib/useNow";
 
-type Filter = "semua" | "berlangsung" | "perlu" | "selesai" | "dihentikan";
+type Filter = "semua" | "berlangsung" | "selesai" | "dihentikan";
 
 const duration = (ms: number) => {
   const minutes = Math.max(0, Math.floor(ms / 60000));
@@ -50,22 +48,16 @@ export default function Page() {
   const sessions = useStore((state) => state.sessions);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("semua");
-  // Durasi sesi yang sedang berjalan ikut bergerak tiap detik.
   const now = useNow(1000);
 
   const all = Object.values(sessions).sort((a, b) => b.startedAt - a.startedAt);
   const live = all.filter((session) => session.status === "berlangsung");
   const finished = all.filter((session) => session.status === "selesai" || session.status === "waktu_habis");
   const stopped = all.filter((session) => session.status === "dihentikan");
-  const done = all.filter((session) => session.status !== "berlangsung");
-  const flagged = done.filter(
-    (session) => riskLevel(riskScore(session.violations)) !== "Rendah" && !session.reviewed,
-  );
 
   const filters: { key: Filter; label: string; count: number }[] = [
     { key: "semua", label: "Semua", count: all.length },
     { key: "berlangsung", label: "Berlangsung", count: live.length },
-    { key: "perlu", label: "Perlu ditinjau", count: flagged.length },
     { key: "selesai", label: "Selesai", count: finished.length },
     { key: "dihentikan", label: "Dihentikan", count: stopped.length },
   ];
@@ -75,15 +67,7 @@ export default function Page() {
     if (filter === "berlangsung" && session.status !== "berlangsung") return false;
     if (filter === "selesai" && session.status !== "selesai" && session.status !== "waktu_habis") return false;
     if (filter === "dihentikan" && session.status !== "dihentikan") return false;
-    if (filter === "perlu") {
-      if (
-        session.status === "berlangsung" ||
-        session.reviewed ||
-        riskLevel(riskScore(session.violations)) === "Rendah"
-      ) {
-        return false;
-      }
-    }
+
     if (!normalizedQuery) return true;
     return (
       session.candidate.name.toLowerCase().includes(normalizedQuery) ||
@@ -120,12 +104,7 @@ export default function Page() {
           <Metric label="Total sesi" value={all.length} icon={<FiUsers aria-hidden size={16} />} />
           <Metric label="Berlangsung" value={live.length} icon={<FiClock aria-hidden size={16} />} />
           <Metric label="Selesai" value={finished.length} icon={<FiBarChart2 aria-hidden size={16} />} />
-          <Metric
-            label="Perlu ditinjau"
-            value={flagged.length}
-            icon={<FiShield aria-hidden size={16} />}
-            hint={flagged.length > 0 ? "Risiko sedang atau tinggi dan belum ditinjau." : "Tidak ada yang menunggu."}
-          />
+          <Metric label="Dihentikan" value={stopped.length} icon={<FiX aria-hidden size={16} />} />
         </div>
 
         <div className="mt-6 flex flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-card lg:flex-row lg:items-center lg:justify-between">
@@ -211,14 +190,13 @@ export default function Page() {
           ) : (
             <Card className="overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] border-collapse text-sm">
+                <table className="w-full min-w-[800px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-line bg-surface-muted text-left text-[11px] uppercase tracking-[0.06em] text-muted">
-                      <th className="px-4 py-2.5 font-medium">peserta</th>
+                      <th className="px-4 py-2.5 font-medium">Peserta</th>
                       <th className="px-4 py-2.5 font-medium">Status</th>
                       <th className="px-4 py-2.5 font-medium">Progres</th>
                       <th className="px-4 py-2.5 font-medium">Skor</th>
-                      <th className="px-4 py-2.5 font-medium">Risiko</th>
                       <th className="hidden px-4 py-2.5 font-medium lg:table-cell">Mulai</th>
                       <th className="hidden px-4 py-2.5 font-medium md:table-cell">Durasi</th>
                       <th className="w-10 px-2 py-2.5" />
@@ -227,8 +205,6 @@ export default function Page() {
                   <tbody className="divide-y divide-line">
                     {rows.map((session) => {
                       const score = scoreSession(session);
-                      const points = riskScore(session.violations);
-                      const level = riskLevel(points);
                       const answered = Object.keys(session.answers).length;
                       const running = session.status === "berlangsung";
                       const sectionName = sections[session.section]?.name ?? "—";
@@ -273,12 +249,6 @@ export default function Page() {
                               {score.answered === 0 ? "belum dijawab" : `${score.percent}% benar`}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            <Badge tone={riskTone[level]}>{level}</Badge>
-                            <span className="mt-1 block text-[11px] tabular-nums text-muted">
-                              {points} poin
-                            </span>
-                          </td>
                           <td className="hidden px-4 py-3 text-xs tabular-nums text-muted lg:table-cell">
                             {dateTime(session.startedAt)}
                           </td>
@@ -305,8 +275,7 @@ export default function Page() {
         </div>
 
         <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-muted">
-          Sesi dan tangkapan disimpan lokal di browser ini. Menghapus data situs akan menghapus
-          seluruh riwayat.
+          Sesi disimpan lokal di browser ini. Menghapus data situs akan menghapus seluruh riwayat.
         </p>
       </main>
     </div>

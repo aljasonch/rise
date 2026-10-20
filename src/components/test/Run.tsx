@@ -2,45 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  FiAlertTriangle,
   FiArrowRight,
-  FiCamera,
   FiCheck,
-  FiChevronDown,
-  FiChevronUp,
   FiClock,
   FiFlag,
-  FiShield,
+  FiUser,
 } from "react-icons/fi";
 import { Brand } from "@/components/Brand";
 import { Badge, Button, Card, Modal, ProgressBar, Toast } from "@/components/ui";
 import { config } from "@/lib/config";
 import { sections, totalQuestions } from "@/data/test";
-import { riskScore } from "@/lib/risk";
 import { useNow } from "@/lib/useNow";
-import { useProctor } from "@/lib/useProctor";
 import { useStore, type Status } from "@/lib/store";
-import { violationLabel, violationWeight } from "@/lib/violations";
-import Overlay from "./Overlay";
-import Watermark from "./Watermark";
 
 const clock = (ms: number) => {
   const total = Math.max(0, Math.floor(ms / 1000));
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-};
-
-const stamp = (ms: number) => {
-  const date = new Date(ms);
-  return [date.getHours(), date.getMinutes(), date.getSeconds()]
-    .map((value) => String(value).padStart(2, "0"))
-    .join(":");
-};
-
-const severity = (type: keyof typeof violationWeight) => {
-  const points = violationWeight[type];
-  if (points >= 3) return "danger" as const;
-  if (points >= 2) return "warn" as const;
-  return "neutral" as const;
 };
 
 export default function Run() {
@@ -51,22 +28,16 @@ export default function Run() {
   const notice = useStore((state) => state.notice);
   const setNotice = useStore((state) => state.setNotice);
 
-  const camRef = useRef<HTMLVideoElement>(null);
   const ended = useRef(false);
   const warned = useRef(false);
 
   const [index, setIndex] = useState(0);
   const [section, setSection] = useState(session?.section ?? 0);
   const [modal, setModal] = useState<"" | "section" | "finish">("");
-  const [historyOpen, setHistoryOpen] = useState(true);
 
   const now = useNow(config.tickMs);
   const left = session ? Math.max(0, session.deadline - now) : 0;
   const critical = left > 0 && left <= config.criticalMs;
-
-  const { blocked, restoreError, unfocused, restore, faces, alert, cam, clearAlert } = useProctor(
-    session?.id ?? "",
-  );
 
   const answeredTotal = Object.keys(session?.answers ?? {}).length;
   const total = totalQuestions;
@@ -86,7 +57,6 @@ export default function Run() {
   const closeModal = useCallback(() => setModal(""), []);
   const dismissNotice = useCallback(() => setNotice(""), [setNotice]);
 
-  // Fungsi ini dipanggil dari beberapa effect, jadi dijaga agar hanya sekali.
   const stop = useCallback(
     (status: Status) => {
       if (ended.current) return;
@@ -95,13 +65,6 @@ export default function Run() {
     },
     [finish],
   );
-
-  useEffect(() => {
-    const video = camRef.current;
-    if (!video || !cam) return;
-    video.srcObject = cam;
-    void video.play().catch(() => {});
-  }, [cam]);
 
   // Sisa waktu dibaca dari deadline, bukan dari counter yang dikurangi.
   useEffect(() => {
@@ -131,8 +94,8 @@ export default function Run() {
   if (!session) return null;
 
   const pick = (value: number) => answer(current.id, value);
-  const goTo = (next: number) => {
-    setIndex(next);
+  const goTo = (nextIdx: number) => {
+    setIndex(nextIdx);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const advance = () => {
@@ -171,35 +134,12 @@ export default function Run() {
               {clock(left)}
               {critical && <span className="hidden text-[11px] font-normal sm:inline">hampir habis</span>}
             </span>
-
-            <div className="relative hidden h-11 w-14 overflow-hidden rounded-input border border-line bg-media sm:block">
-              {cam ? (
-                <video ref={camRef} muted playsInline autoPlay className="h-full w-full object-cover" />
-              ) : (
-                <span className="grid h-full w-full place-items-center text-white/50">
-                  <FiCamera aria-hidden size={16} />
-                </span>
-              )}
-              <span
-                aria-hidden
-                className={`absolute right-1 top-1 size-2 rounded-full border border-white/70 ${
-                  faces === 1 ? "bg-ink" : "bg-danger"
-                }`}
-              />
-            </div>
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid w-full max-w-[1200px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0">
-          {unfocused && (
-            <div className="mb-4 flex items-center gap-2 rounded-input border border-line bg-surface-muted px-3 py-2 text-xs text-ink">
-              <FiAlertTriangle aria-hidden size={14} />
-              Jendela tes tidak aktif. Kembali ke halaman tes.
-            </div>
-          )}
-
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
             <span>{active.description}</span>
             <span className="tabular-nums">
@@ -393,88 +333,24 @@ export default function Run() {
           </Card>
 
           <Card className="p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
-                <FiShield aria-hidden size={15} className="text-muted" />
-                Pengawasan
-              </h2>
-              <span className="text-xs tabular-nums text-muted">
-                {session.violations.length} catatan
-              </span>
-            </div>
-
-            <p className="mt-2 text-xs leading-relaxed text-muted">
-              {faces === 1
-                ? "Satu wajah terdeteksi di kamera."
-                : faces > 1
-                  ? `${faces} wajah terdeteksi. Hanya peserta yang boleh berada di depan kamera.`
-                  : "Wajah tidak terdeteksi. Posisikan wajah di depan kamera."}
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setHistoryOpen((value) => !value)}
-              aria-expanded={historyOpen}
-              className="mt-3 flex w-full items-center justify-between border-t border-line pt-3 text-xs font-medium text-muted transition-colors hover:text-ink"
-            >
-              Riwayat pelanggaran
-              {historyOpen ? <FiChevronUp aria-hidden size={15} /> : <FiChevronDown aria-hidden size={15} />}
-            </button>
-
-            {historyOpen &&
-              (session.violations.length === 0 ? (
-                <p className="mt-2 text-xs text-muted">Belum ada pelanggaran.</p>
-              ) : (
-                <ul className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
-                  {[...session.violations].reverse().map((violation) => {
-                    const tone = severity(violation.type);
-                    return (
-                      <li key={violation.id} className="flex items-start gap-2 text-xs">
-                        <span
-                          aria-hidden
-                          className={`mt-1 size-1.5 shrink-0 rounded-full ${
-                            tone === "danger" ? "bg-danger" : tone === "warn" ? "bg-muted" : "bg-faint"
-                          }`}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-ink">{violationLabel[violation.type]}</span>
-                          <span className="text-muted">
-                            {stamp(violation.at)} · +{violationWeight[violation.type]} poin
-                          </span>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ))}
-
-            <p className="mt-3 border-t border-line pt-2 text-[11px] tabular-nums text-muted">
-              Total poin pengawasan: {riskScore(session.violations)}
-            </p>
+            <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
+              <FiUser aria-hidden size={15} className="text-muted" />
+              Peserta
+            </h2>
+            <p className="mt-2 text-sm font-medium text-ink">{session.candidate.name}</p>
+            <p className="text-xs text-muted">{session.candidate.position}</p>
+            <p className="mt-1 font-mono text-xs text-muted">{session.candidate.email}</p>
           </Card>
         </aside>
       </div>
 
-      <Watermark name={session.candidate.name} id={session.id} />
-
       <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[65] flex justify-center px-4">
         <div className="pointer-events-auto flex w-full max-w-md flex-col gap-2">
-          {alert && (
-            <Toast
-              key={alert.id}
-              title={alert.title}
-              description={alert.text}
-              tone={alert.critical ? "danger" : "warn"}
-              onClose={clearAlert}
-            />
-          )}
           {notice && (
             <Toast key={`notice-${notice}`} title={notice} tone="neutral" onClose={dismissNotice} />
           )}
         </div>
       </div>
-
-      {blocked && <Overlay blocked={blocked} onRestore={restore} error={restoreError} />}
 
       {modal === "section" && next && (
         <Modal

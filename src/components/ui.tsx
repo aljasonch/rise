@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useEffect,
   useId,
@@ -9,8 +10,18 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
-import { FiAlertCircle, FiAlertTriangle, FiCheckCircle, FiInfo, FiLoader, FiX } from "react-icons/fi";
-import { config } from "@/lib/config";
+import {
+  FiAlertCircle,
+  FiAlertTriangle,
+  FiArrowUpRight,
+  FiBarChart2,
+  FiCheckCircle,
+  FiInfo,
+  FiLoader,
+  FiUser,
+  FiX,
+} from "react-icons/fi";
+import { config } from "@/lib/store";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "subtle";
 type Size = "sm" | "md" | "lg";
@@ -349,4 +360,64 @@ export function EmptyState({
 
 export function Spinner({ size = 18, className = "" }: { size?: number; className?: string }) {
   return <FiLoader aria-hidden size={size} className={`animate-spin ${className}`} />;
+}
+
+export function Brand({
+  href = "/",
+  label,
+  className = "",
+}: {
+  href?: string;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-label={label ? `RISE, ${label}` : "RISE, beranda"}
+      className={`inline-flex items-center gap-2.5 rounded-input ${className}`}
+    >
+      <span className="text-sm font-semibold tracking-[0.12em] text-ink">RISE</span>
+      {label && (
+        <>
+          <span aria-hidden className="h-4 w-px bg-line" />
+          <span className="text-xs font-medium text-muted">{label}</span>
+        </>
+      )}
+    </Link>
+  );
+}
+
+export function AdminHeader() {
+  return (
+    <header className="sticky top-0 z-30 border-b border-line bg-surface">
+      <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between gap-4 px-5 py-3 sm:px-8">
+        <Brand label="Admin" />
+        <nav className="flex items-center gap-1.5">
+          <Link
+            href="/test"
+            aria-label="Alur peserta"
+            className="inline-flex items-center gap-2 rounded-input px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-muted hover:text-ink"
+          >
+            <FiUser aria-hidden size={15} />
+            <span className="hidden sm:inline">Alur peserta</span>
+          </Link>
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-2 rounded-input bg-surface-muted px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-line"
+          >
+            <FiBarChart2 aria-hidden size={15} />
+            Sesi
+          </Link>
+          <Link
+            href="/"
+            aria-label="Beranda"
+            className="grid size-9 place-items-center rounded-input text-muted transition-colors hover:bg-surface-muted hover:text-ink"
+          >
+            <FiArrowUpRight aria-hidden size={16} />
+          </Link>
+        </nav>
+      </div>
+    </header>
+  );
 }

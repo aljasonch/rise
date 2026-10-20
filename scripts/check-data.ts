@@ -2,8 +2,7 @@
 // Jalankan dengan: node scripts/check-data.ts
 import assert from "node:assert/strict";
 import { sections, totalQuestions } from "../src/data/test.ts";
-import { scoreSession } from "../src/lib/score.ts";
-import type { Session } from "../src/lib/store.ts";
+import { scoreSession, type Session } from "../src/lib/store.ts";
 
 const ids = new Set<string>();
 let cognitive = 0;
@@ -61,7 +60,6 @@ const base: Session = {
     name: "Pemeriksaan Data",
     email: "data@contoh.id",
     position: "QA",
-    verificationCode: "ABC123",
   },
   status: "selesai",
   startedAt: 0,

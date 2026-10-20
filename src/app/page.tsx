@@ -1,63 +1,19 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { IconType } from "react-icons";
 import {
   FiArrowRight,
   FiArrowUpRight,
-  FiBarChart2,
   FiCheckCircle,
   FiClock,
   FiLayers,
-  FiShield,
-  FiUser,
+  FiPlay,
 } from "react-icons/fi";
-import { Brand } from "@/components/Brand";
+import { Brand } from "@/components/ui";
 import { sections, totalMinutes, totalQuestions } from "@/data/test";
-
-function RoleCard({
-  href,
-  icon: Icon,
-  title,
-  description,
-  primary = false,
-}: {
-  href: string;
-  icon: IconType;
-  title: string;
-  description: string;
-  primary?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`group flex items-start gap-4 rounded-card border p-5 shadow-card transition-colors duration-150 ${
-        primary
-          ? "border-ink bg-ink text-white hover:border-neutral-800 hover:bg-neutral-800"
-          : "border-line bg-surface text-ink hover:border-line-strong hover:bg-surface-muted"
-      }`}
-    >
-      <span
-        className={`grid size-11 shrink-0 place-items-center rounded-input ${
-          primary ? "text-white" : " text-muted"
-        }`}
-      >
-        <Icon aria-hidden size={20} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center justify-between gap-3">
-          <span className="text-sm font-semibold">{title}</span>
-          <FiArrowUpRight
-            aria-hidden
-            size={18}
-            className={primary ? "text-white/80" : "text-faint group-hover:text-ink"}
-          />
-        </span>
-        <span className={`mt-1 block text-sm leading-relaxed ${primary ? "text-white/80" : "text-muted"}`}>
-          {description}
-        </span>
-      </span>
-    </Link>
-  );
-}
+import { defaultSsoUser, useStore } from "@/lib/store";
 
 function Fact({ icon: Icon, label, value }: { icon: IconType; label: string; value: string }) {
   return (
@@ -72,6 +28,15 @@ function Fact({ icon: Icon, label, value }: { icon: IconType; label: string; val
 }
 
 export default function Page() {
+  const router = useRouter();
+  const start = useStore((state) => state.start);
+  const candidate = defaultSsoUser;
+
+  const handleStart = () => {
+    start(candidate);
+    router.push("/test");
+  };
+
   return (
     <main className="min-h-screen">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-6 sm:px-8">
@@ -87,54 +52,41 @@ export default function Page() {
 
       <section className="mx-auto grid w-full max-w-6xl gap-10 px-5 pb-16 pt-6 sm:px-8 lg:min-h-[calc(100vh-88px)] lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-14 lg:py-12">
         <div>
-          <h1 className="mt-5 max-w-2xl text-balance text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl">
+          <p className="text-sm font-medium text-muted">
+            Hai, <span className="font-semibold text-ink">{candidate.name}</span>
+          </p>
+
+          <h1 className="mt-3 max-w-2xl text-balance text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl">
             Psikotes
           </h1>
 
           <div className="mt-8 grid max-w-lg grid-cols-1 gap-4 border-y border-line py-5 sm:grid-cols-3">
             <Fact icon={FiLayers} label="subtes" value={String(sections.length)} />
             <Fact icon={FiCheckCircle} label="soal" value={String(totalQuestions)} />
-            <Fact icon={FiClock} label="menit pengerjaan" value={String(totalMinutes)} />
-          </div>
-
-          <div className="mt-8 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted">
-              <FiCheckCircle aria-hidden size={14} />
-              4 Subtes standar
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted">
-              <FiBarChart2 aria-hidden size={14} />
-              Penilaian otomatis
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted">
-              <FiShield aria-hidden size={14} />
-              Data lokal di perangkat
-            </span>
+            <Fact icon={FiClock} label="menit" value={String(totalMinutes)} />
           </div>
         </div>
 
         <div className="grid gap-4">
-          <RoleCard
-            href="/test"
-            icon={FiUser}
-            title="Mulai sebagai peserta"
-            description="Isi identitas, konfirmasi persiapan, lalu kerjakan asesmen."
-            primary
-          />
-          <RoleCard
-            href="/admin"
-            icon={FiBarChart2}
-            title="Buka panel admin"
-            description="Tinjau sesi nyata, progres pengerjaan, dan skor kognitif peserta."
-          />
-
-          <div className="rounded-card border border-line bg-surface-muted p-4 text-xs leading-relaxed text-muted">
-            <p className="font-medium text-ink">Catatan data</p>
-            <p className="mt-1">
-              Sesi dan tangkapan layar disimpan di browser ini. Tidak ada data demo yang
-              ditampilkan di panel admin.
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={handleStart}
+            className="group flex items-center justify-between gap-4 rounded-card border border-ink bg-ink p-5 text-left text-white shadow-card transition-colors duration-150 hover:border-neutral-800 hover:bg-neutral-800"
+          >
+            <span className="grid size-11 shrink-0 place-items-center rounded-input text-white">
+              <FiPlay aria-hidden size={20} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center justify-between gap-3">
+                <span className="text-base font-semibold">Mulai</span>
+                <FiArrowUpRight
+                  aria-hidden
+                  size={18}
+                  className="text-white/80 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+                />
+              </span>
+            </span>
+          </button>
         </div>
       </section>
     </main>

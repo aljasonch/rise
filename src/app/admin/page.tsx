@@ -11,12 +11,9 @@ import {
   FiUsers,
   FiX,
 } from "react-icons/fi";
-import { AdminHeader } from "@/components/admin/AdminHeader";
-import { Badge, Button, Card, EmptyState, Metric, ProgressBar } from "@/components/ui";
+import { AdminHeader, Badge, Button, Card, EmptyState, Metric, ProgressBar } from "@/components/ui";
 import { sections, totalQuestions } from "@/data/test";
-import { scoreSession } from "@/lib/score";
-import { statusLabel, useStore, type Status } from "@/lib/store";
-import { useNow } from "@/lib/useNow";
+import { scoreSession, statusLabel, useNow, useStore, type Status } from "@/lib/store";
 
 type Filter = "semua" | "berlangsung" | "selesai" | "dihentikan";
 
@@ -72,8 +69,7 @@ export default function Page() {
     return (
       session.candidate.name.toLowerCase().includes(normalizedQuery) ||
       session.candidate.position.toLowerCase().includes(normalizedQuery) ||
-      session.candidate.email.toLowerCase().includes(normalizedQuery) ||
-      session.candidate.verificationCode?.toLowerCase().includes(normalizedQuery)
+      session.candidate.email.toLowerCase().includes(normalizedQuery)
     );
   });
 
@@ -117,7 +113,7 @@ export default function Page() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cari nama, posisi, email, atau kode"
+              placeholder="Cari nama, posisi, atau email"
               aria-label="Cari sesi"
               className="w-full rounded-input border border-line bg-surface py-2.5 pl-9 pr-9 text-sm transition-colors placeholder:text-faint hover:border-line-strong focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/10"
             />

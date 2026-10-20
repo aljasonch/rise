@@ -8,12 +8,9 @@ import {
   FiFlag,
   FiUser,
 } from "react-icons/fi";
-import { Brand } from "@/components/Brand";
-import { Badge, Button, Card, Modal, ProgressBar, Toast } from "@/components/ui";
-import { config } from "@/lib/config";
+import { Badge, Brand, Button, Card, Modal, ProgressBar, Toast } from "@/components/ui";
+import { config, useNow, useStore, type Status } from "@/lib/store";
 import { sections, totalQuestions } from "@/data/test";
-import { useNow } from "@/lib/useNow";
-import { useStore, type Status } from "@/lib/store";
 
 const clock = (ms: number) => {
   const total = Math.max(0, Math.floor(ms / 1000));

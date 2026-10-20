@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { FiArrowLeft, FiCheckCircle, FiClock, FiList, FiRefreshCw, FiSlash } from "react-icons/fi";
-import { Brand } from "@/components/Brand";
-import { Badge, Button, Card, Metric } from "@/components/ui";
+import { Badge, Brand, Button, Card, Metric } from "@/components/ui";
 import { totalQuestions } from "@/data/test";
 import { useStore, statusLabel } from "@/lib/store";
 

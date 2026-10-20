@@ -1,9 +1,50 @@
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { sections } from "@/data/test";
-import type { Identity } from "./identity";
-import { config } from "./config";
+import { sections } from "../data/test.ts";
 
+// ==========================================
+// 1. Konfigurasi
+// ==========================================
+export const config = {
+  tickMs: 1000,
+  criticalMs: 60000,
+  toastMs: 5000,
+  minuteMs: 60000,
+};
+
+// ==========================================
+// 2. Identitas Peserta & SSO
+// ==========================================
+export type Identity = {
+  name: string;
+  email: string;
+  position: string;
+};
+
+export const ssoProfiles: Identity[] = [
+  {
+    name: "Budi Santoso",
+    email: "budi.santoso@perusahaan.com",
+    position: "Software Engineer",
+  },
+  {
+    name: "Siti Rahma",
+    email: "siti.rahma@perusahaan.com",
+    position: "Product Manager",
+  },
+  {
+    name: "Ahmad Fauzi",
+    email: "ahmad.fauzi@perusahaan.com",
+    position: "Data Analyst",
+  },
+];
+
+export const defaultSsoUser: Identity = ssoProfiles[0];
+
+// ==========================================
+// 3. Status & Tipe Sesi
+// ==========================================
 export type Status = "berlangsung" | "selesai" | "waktu_habis" | "dihentikan";
 
 export type Session = {
@@ -26,11 +67,91 @@ export const statusLabel: Record<Status, string> = {
   dihentikan: "Dihentikan",
 };
 
+// ==========================================
+// 4. Hook Pembacaan Waktu
+// ==========================================
+export const useNow = (ms: number) => {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+
+  return now;
+};
+
+// ==========================================
+// 5. Penilaian / Skoring Asesmen
+// ==========================================
+export type SectionScore = {
+  id: string;
+  name: string;
+  kind: "kognitif" | "kepribadian";
+  correct: number;
+  answered: number;
+  total: number;
+  percent: number;
+};
+
+export type SessionScore = {
+  sections: SectionScore[];
+  correct: number;
+  answered: number;
+  total: number;
+  percent: number;
+  personalityAnswered: number;
+  personalityTotal: number;
+};
+
+const percent = (part: number, whole: number) => (whole === 0 ? 0 : Math.round((part / whole) * 100));
+
+export const scoreSession = (session: Session): SessionScore => {
+  const scored = sections.map((section) => {
+    const answered = section.questions.filter((question) => question.id in session.answers).length;
+    const correct =
+      section.kind === "kognitif"
+        ? section.questions.filter((question) => session.answers[question.id] === question.answer).length
+        : 0;
+
+    return {
+      id: section.id,
+      name: section.name,
+      kind: section.kind,
+      correct,
+      answered,
+      total: section.questions.length,
+      percent:
+        section.kind === "kognitif"
+          ? percent(correct, section.questions.length)
+          : percent(answered, section.questions.length),
+    };
+  });
+
+  const cognitive = scored.filter((section) => section.kind === "kognitif");
+  const personality = scored.find((section) => section.kind === "kepribadian");
+  const total = cognitive.reduce((sum, section) => sum + section.total, 0);
+  const correct = cognitive.reduce((sum, section) => sum + section.correct, 0);
+  const answered = cognitive.reduce((sum, section) => sum + section.answered, 0);
+
+  return {
+    sections: scored,
+    correct,
+    answered,
+    total,
+    percent: percent(correct, total),
+    personalityAnswered: personality?.answered ?? 0,
+    personalityTotal: personality?.total ?? 0,
+  };
+};
+
+// ==========================================
+// 6. Zustand Store & Persistence
+// ==========================================
 type State = {
   sessions: Record<string, Session>;
   activeId: string;
   hydrated: boolean;
-  // Toast sekali pakai, tidak ikut dipersist.
   notice: string;
   setNotice: (text: string) => void;
   start: (candidate: Identity) => void;
@@ -94,7 +215,6 @@ const sanitizeSessions = (value: unknown): Record<string, Session> => {
 export const useStore = create<State>()(
   persist(
     (set, get) => {
-      // Semua aksi peserta bekerja pada sesi aktif.
       const editActive = (fn: (session: Session) => Session) => {
         const id = get().activeId;
         set((state) => ({ sessions: withSession(state.sessions, id, fn) }));
@@ -151,7 +271,6 @@ export const useStore = create<State>()(
             sessions: withSession(state.sessions, sessionId, (session) => ({ ...session, reviewed: true })),
           })),
 
-        // Hentikan langsung terlihat di admin tanpa menunggu tab peserta.
         stop: (sessionId) =>
           set((state) => ({
             sessions: withSession(state.sessions, sessionId, (session) =>
@@ -179,13 +298,11 @@ export const useStore = create<State>()(
   ),
 );
 
-// Dipanggil sekali saat halaman pertama dimuat.
 export const hydrate = async () => {
-  // Kunci lama berisi data demo. Hapus agar panel admin benar-benar bersih.
   try {
     localStorage.removeItem("rise-demo");
   } catch {
-    // Penyimpanan bisa diblokir oleh mode privat; hidrasi tetap dilanjutkan.
+    // Mode privat
   }
 
   await useStore.persist.rehydrate();

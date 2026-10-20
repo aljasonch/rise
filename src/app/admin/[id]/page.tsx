@@ -11,12 +11,9 @@ import {
   FiShield,
   FiUser,
 } from "react-icons/fi";
-import { AdminHeader } from "@/components/admin/AdminHeader";
-import { Badge, Button, Card, EmptyState, Metric, Modal, ProgressBar } from "@/components/ui";
+import { AdminHeader, Badge, Button, Card, EmptyState, Metric, Modal, ProgressBar } from "@/components/ui";
 import { sections, totalQuestions } from "@/data/test";
-import { scoreSession } from "@/lib/score";
-import { statusLabel, useStore, type Status } from "@/lib/store";
-import { useNow } from "@/lib/useNow";
+import { scoreSession, statusLabel, useNow, useStore, type Status } from "@/lib/store";
 
 const duration = (ms: number) => {
   const minutes = Math.max(0, Math.floor(ms / 60000));
@@ -120,12 +117,6 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                 <FiMail aria-hidden size={13} />
                 {session.candidate.email}
               </span>
-              {session.candidate.verificationCode && (
-                <>
-                  <span aria-hidden>·</span>
-                  <span className="font-mono text-xs">Kode: {session.candidate.verificationCode}</span>
-                </>
-              )}
             </p>
           </div>
 

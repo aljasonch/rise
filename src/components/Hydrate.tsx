@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Brand } from "@/components/Brand";
-import { Spinner } from "@/components/ui";
+import { Brand, Spinner } from "@/components/ui";
 import { hydrate, useStore } from "@/lib/store";
 
 // Rehydrate manual karena skipHydration aktif, lalu dengarkan event storage

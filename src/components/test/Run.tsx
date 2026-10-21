@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  FiAlertTriangle,
   FiArrowRight,
   FiCheck,
   FiClock,
   FiFlag,
-  FiUser,
+  FiMaximize,
+  FiShield,
 } from "react-icons/fi";
-import { Badge, Brand, Button, Card, Modal, ProgressBar, Toast } from "@/components/ui";
+import { Button, Lamp, Modal, ProgressBar, Toast } from "@/components/ui";
+import { guardScreenShare, useProctorGuard } from "@/lib/proctor";
 import { config, useNow, useStore, type Status } from "@/lib/store";
 import { sections, totalQuestions } from "@/data/test";
 
@@ -24,6 +27,19 @@ export default function Run() {
   const finish = useStore((state) => state.finish);
   const notice = useStore((state) => state.notice);
   const setNotice = useStore((state) => state.setNotice);
+
+  const {
+    shieldRef,
+    warning,
+    blanked,
+    blankReason,
+    isFullscreen,
+    violationsCount,
+    maxViolations,
+    dismissWarning,
+    restoreScreen,
+    violationTitle,
+  } = useProctorGuard(session?.status === "berlangsung");
 
   const ended = useRef(false);
   const warned = useRef(false);
@@ -105,112 +121,160 @@ export default function Run() {
 
   const next = sections[section + 1];
   const sectionDone = questions.filter((question) => question.id in session.answers).length;
+  const showBlankScreen = blanked;
 
   return (
-    <div className="min-h-screen select-none">
-      <header className="sticky top-0 z-30 border-b border-line bg-surface">
-        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 sm:px-8">
-          <Brand label="Asesmen" />
-          <span aria-hidden className="hidden h-5 w-px bg-line sm:block" />
+    <div
+      className="min-h-screen select-none"
+      onCopy={(e) => e.preventDefault()}
+      onCut={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {/* Tirai Hitam Sinkron 0ms (Selalu ada di DOM agar langsung menutup layar saat tombol Win/Shift/PrintScreen ditekan) */}
+      <div
+        ref={shieldRef}
+        aria-live="assertive"
+        style={{
+          display: showBlankScreen ? "flex" : "none",
+          opacity: showBlankScreen ? 1 : 0,
+        }}
+        className="fixed inset-0 z-[68] flex-col items-center justify-center bg-black px-6 text-center text-white select-none"
+      >
+        <span className="grid size-12 place-items-center rounded-input border border-white/20 bg-white/10 text-white">
+          <FiShield aria-hidden size={22} />
+        </span>
+        <p className="mt-4 text-base font-semibold">Layar Dilindungi</p>
+        <p className="mt-1.5 max-w-md text-xs leading-relaxed text-white/70">
+          {blankReason || "Tangkapan layar dan perekaman layar tidak diizinkan."}
+        </p>
+        <p className="mt-1 text-[10px] text-white/40">
+          Berbagi layar: {guardScreenShare() ? "aktif" : "tidak aktif"}
+        </p>
+        {!warning && (
+          <button
+            type="button"
+            onClick={restoreScreen}
+            className="mt-5 inline-flex items-center gap-2 rounded-input border border-white/25 bg-white/15 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-white/25"
+          >
+            <FiMaximize aria-hidden size={14} />
+            Kembali ke layar penuh
+          </button>
+        )}
+      </div>
 
-          <Badge tone="accent">
-            {active.name} · {section + 1}/{sections.length}
-          </Badge>
-          <span className="text-xs text-muted">
-            <span className="font-medium tabular-nums text-ink">{answeredTotal}</span>/{total} dijawab
+      {/* Watermark identitas: jejak di setiap foto layar dari HP. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-20 select-none opacity-[0.07]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="200"><text x="16" y="100" font-family="monospace" font-size="14" fill="#0f172a">${session.candidate.name} · ${session.candidate.email} · ${new Date(session.startedAt).toLocaleString("id-ID")}</text></svg>`,
+          )}")`,
+        }}
+      />
+
+      <header className="rail sticky top-0 z-30">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3 sm:px-8">
+          <span className="readout text-sm font-semibold tracking-[0.14em] text-chalk">RISE</span>
+
+          <span aria-hidden className="hidden h-3.5 w-px bg-chassis-3 sm:block" />
+
+          <span className="text-sm text-chalk">{active.name}</span>
+          <span className="readout text-xs text-chalk-2">
+            {section + 1}/{sections.length}
           </span>
 
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <div className="ml-auto flex items-center gap-3">
+            <Lamp tone={isFullscreen ? "ok" : "danger"}>
+              {isFullscreen ? "Layar penuh" : "Bukan layar penuh"}
+            </Lamp>
+            {violationsCount > 0 && (
+              <Lamp tone="danger">
+                Pelanggaran {violationsCount}/{maxViolations}
+              </Lamp>
+            )}
             <span
               aria-live="polite"
-              className={`inline-flex items-center gap-2 rounded-input border px-3 py-1.5 text-sm font-medium tabular-nums ${
-                critical ? "border-danger/30 bg-surface-muted text-danger" : "border-line bg-surface-muted text-ink"
+              className={`readout inline-flex items-center gap-2 rounded-input border px-2.5 py-1 text-sm font-medium ${
+                critical
+                  ? "border-danger-fg/50 bg-danger-fg/15 text-danger-fg"
+                  : "border-chassis-3 bg-chassis-2 text-chalk"
               }`}
             >
-              <FiClock aria-hidden size={15} />
+              <FiClock aria-hidden size={14} />
               {clock(left)}
-              {critical && <span className="hidden text-[11px] font-normal sm:inline">hampir habis</span>}
             </span>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-[1200px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div
+        className={`mx-auto grid w-full max-w-[1200px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_260px] ${
+          showBlankScreen ? "invisible pointer-events-none" : ""
+        }`}
+      >
         <main className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-            <span>{active.description}</span>
-            <span className="tabular-nums">
-              Soal {index + 1} dari {questions.length}
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-chalk-2">{active.description}</p>
+            <p className="readout text-xs text-chalk-2">
+              {index + 1}/{questions.length}
+            </p>
           </div>
-          <ProgressBar value={answeredTotal} max={total} label="Progres jawaban" />
+          <ProgressBar className="mt-2" value={answeredTotal} max={total} />
 
-          <Card className="mt-4 p-5 sm:p-7">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="neutral">{active.name}</Badge>
-              <Badge tone="neutral">
+          <article className="sheet mt-4 p-5 sm:p-8">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="field text-muted">{active.name}</span>
+              <span aria-hidden className="h-3 w-px bg-rule" />
+              <span className="text-xs text-muted">
                 {active.kind === "kognitif" ? "Pilih satu jawaban" : "Skala sikap"}
-              </Badge>
-              <span
-                className={`ml-auto inline-flex items-center gap-1.5 text-xs ${
-                  isAnswered ? "text-ink" : "text-muted"
-                }`}
-              >
-                {isAnswered ? (
-                  <>
-                    <FiCheck aria-hidden size={14} />
-                    Jawaban tersimpan
-                  </>
-                ) : (
-                  "Belum dijawab"
-                )}
+              </span>
+              <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted">
+                {isAnswered && <FiCheck aria-hidden size={14} className="text-ink" />}
+                {isAnswered ? "Tersimpan" : "Belum dijawab"}
               </span>
             </div>
 
-            <h1 id="question-text" className="mt-5 text-balance text-xl font-medium leading-relaxed sm:text-2xl">
+            <h1
+              id="question-text"
+              className="mt-5 text-balance text-xl font-medium leading-[1.45] text-ink sm:text-[26px]"
+            >
               {current.text}
             </h1>
 
             {active.kind === "kepribadian" ? (
-              <>
-                <p className="mt-2 text-xs leading-relaxed text-muted">
-                  Tidak ada jawaban benar atau salah. Pilih yang paling menggambarkan diri Anda.
-                </p>
-                <div
-                  role="radiogroup"
-                  aria-labelledby="question-text"
-                  className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-5"
-                >
-                  {current.options.map((option, value) => {
-                    const selected = session.answers[current.id] === value;
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        onClick={() => pick(value)}
-                        className={`flex flex-col items-center justify-start gap-2 rounded-input border px-2 py-3 text-center text-xs leading-snug transition-colors duration-150 ${
-                          selected
-                            ? "border-accent bg-accent-soft text-ink"
-                            : "border-line bg-surface text-muted hover:border-line-strong hover:bg-surface-muted"
+              <div
+                role="radiogroup"
+                aria-labelledby="question-text"
+                className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-5"
+              >
+                {current.options.map((option, value) => {
+                  const selected = session.answers[current.id] === value;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => pick(value)}
+                      className={`flex flex-col items-center gap-2 rounded-input border px-2.5 py-3.5 text-center text-xs leading-snug transition-colors ${
+                        selected
+                          ? "border-ink bg-ink text-paper"
+                          : "border-rule bg-paper-2 text-muted hover:border-ink/40 hover:text-ink"
+                      }`}
+                    >
+                      <span
+                        className={`grid size-4 place-items-center rounded-full border ${
+                          selected ? "border-paper bg-paper" : "border-rule"
                         }`}
                       >
-                        <span
-                          className={`grid size-5 shrink-0 place-items-center rounded-full border ${
-                            selected
-                              ? "border-accent bg-accent text-white"
-                              : "border-line-strong text-transparent"
-                          }`}
-                        >
-                          <FiCheck aria-hidden size={12} />
-                        </span>
-                        <span className={selected ? "font-medium text-ink" : ""}>{option}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
+                        {selected && <FiCheck aria-hidden size={10} className="text-ink" />}
+                      </span>
+                      <span>{option}</span>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
               <div role="radiogroup" aria-labelledby="question-text" className="mt-6 space-y-2">
                 {current.options.map((option, value) => {
@@ -222,23 +286,20 @@ export default function Run() {
                       role="radio"
                       aria-checked={selected}
                       onClick={() => pick(value)}
-                      className={`flex w-full items-start gap-3 rounded-input border px-4 py-3 text-left text-sm transition-colors duration-150 ${
+                      className={`flex w-full items-start gap-3 rounded-input border px-4 py-3 text-left text-sm transition-colors ${
                         selected
-                          ? "border-accent bg-accent-soft text-ink"
-                          : "border-line bg-surface hover:border-line-strong hover:bg-surface-muted"
+                          ? "border-ink bg-ink/5 font-medium text-ink"
+                          : "border-rule bg-paper-2 text-ink hover:border-ink/35"
                       }`}
                     >
                       <span
-                        className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border text-[11px] font-semibold ${
-                          selected
-                            ? "border-accent bg-accent text-white"
-                            : "border-line bg-surface text-muted"
+                        className={`readout mt-0.5 grid size-6 shrink-0 place-items-center rounded-input border text-[11px] font-semibold ${
+                          selected ? "border-ink bg-ink text-paper" : "border-rule bg-paper text-muted"
                         }`}
                       >
                         {String.fromCharCode(65 + value)}
                       </span>
                       <span className="min-w-0 flex-1 leading-relaxed">{option}</span>
-                      {selected && <FiCheck aria-hidden size={16} className="mt-0.5 shrink-0 text-accent" />}
                     </button>
                   );
                 })}
@@ -249,7 +310,7 @@ export default function Run() {
               {isAnswered ? "Jawaban tersimpan" : ""}
             </p>
 
-            <div className="mt-7 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-7 flex flex-col-reverse gap-2 border-t border-rule pt-5 sm:flex-row sm:items-center sm:justify-between">
               <Button
                 variant="secondary"
                 disabled={index === 0}
@@ -258,32 +319,30 @@ export default function Run() {
                 Sebelumnya
               </Button>
 
-              <div className="flex items-center justify-end gap-2">
-                {index < questions.length - 1 ? (
-                  <Button onClick={advance}>
-                    Berikutnya
-                    <FiArrowRight aria-hidden size={16} />
-                  </Button>
-                ) : isLast ? (
-                  <Button icon={<FiFlag aria-hidden size={16} />} onClick={() => setModal("finish")}>
-                    Selesai
-                  </Button>
-                ) : (
-                  <Button onClick={() => setModal("section")}>
-                    Subtes berikutnya
-                    <FiArrowRight aria-hidden size={16} />
-                  </Button>
-                )}
-              </div>
+              {index < questions.length - 1 ? (
+                <Button onClick={advance}>
+                  Berikutnya
+                  <FiArrowRight aria-hidden size={16} />
+                </Button>
+              ) : isLast ? (
+                <Button icon={<FiFlag aria-hidden size={16} />} onClick={() => setModal("finish")}>
+                  Selesai
+                </Button>
+              ) : (
+                <Button onClick={() => setModal("section")}>
+                  Subtes berikutnya
+                  <FiArrowRight aria-hidden size={16} />
+                </Button>
+              )}
             </div>
-          </Card>
+          </article>
         </main>
 
         <aside className="space-y-4">
-          <Card className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold">Nomor soal</h2>
-              <span className="text-xs tabular-nums text-muted">
+          <section className="panel p-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="field text-chalk-2">Nomor soal</h2>
+              <span className="readout text-xs text-chalk-2">
                 {sectionDone}/{questions.length}
               </span>
             </div>
@@ -299,12 +358,12 @@ export default function Run() {
                     aria-label={`Soal ${questionIndex + 1}${done ? ", sudah dijawab" : ""}`}
                     aria-current={currentItem ? "step" : undefined}
                     onClick={() => goTo(questionIndex)}
-                    className={`grid h-9 place-items-center rounded-input border text-xs tabular-nums transition-colors duration-150 ${
+                    className={`readout grid h-9 place-items-center rounded-input border text-xs font-medium transition-colors ${
                       currentItem
-                        ? "border-accent bg-accent-soft text-accent"
+                        ? "border-signal bg-signal/15 text-signal"
                         : done
-                          ? "border-accent bg-accent text-white"
-                          : "border-line bg-surface text-muted hover:border-line-strong hover:bg-surface-muted"
+                          ? "border-chassis-3 bg-chassis-3 text-chalk"
+                          : "border-chassis-3 bg-transparent text-chalk-2 hover:bg-fill hover:text-chalk"
                     }`}
                   >
                     {questionIndex + 1}
@@ -313,31 +372,28 @@ export default function Run() {
               })}
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
+            <div className="mt-3.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-chalk-2">
               <span className="inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-sm border border-accent bg-accent-soft" />
+                <span className="size-2 rounded-sm bg-signal/40 ring-1 ring-signal" />
                 Sekarang
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-sm bg-accent" />
+                <span className="size-2 rounded-sm bg-chassis-3" />
                 Terjawab
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-sm border border-line bg-surface" />
+                <span className="size-2 rounded-sm border border-chassis-3" />
                 Belum
               </span>
             </div>
-          </Card>
+          </section>
 
-          <Card className="p-4">
-            <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
-              <FiUser aria-hidden size={15} className="text-muted" />
-              Peserta
-            </h2>
-            <p className="mt-2 text-sm font-medium text-ink">{session.candidate.name}</p>
-            <p className="text-xs text-muted">{session.candidate.position}</p>
-            <p className="mt-1 font-mono text-xs text-muted">{session.candidate.email}</p>
-          </Card>
+          <section className="panel p-4">
+            <h2 className="field text-chalk-2">Peserta</h2>
+            <p className="mt-2 text-sm font-medium text-chalk">{session.candidate.name}</p>
+            <p className="text-xs text-chalk-2">{session.candidate.position}</p>
+            <p className="readout mt-1 truncate text-[11px] text-chalk-2">{session.candidate.email}</p>
+          </section>
         </aside>
       </div>
 
@@ -349,10 +405,36 @@ export default function Run() {
         </div>
       </div>
 
+      {warning && (
+        <Modal
+          title={`Pelanggaran ${violationsCount}/${maxViolations}`}
+          description={violationTitle}
+          actions={
+            <Button
+              icon={!isFullscreen ? <FiMaximize aria-hidden size={15} /> : undefined}
+              onClick={dismissWarning}
+            >
+              {!isFullscreen ? "Kembali ke layar penuh" : "Lanjutkan"}
+            </Button>
+          }
+        >
+          <div className="rounded-input border border-danger-fg/35 bg-danger-fg/10 p-3.5">
+            <div className="flex items-start gap-2.5">
+              <FiAlertTriangle aria-hidden size={16} className="mt-0.5 shrink-0 text-danger-fg" />
+              <p className="text-sm leading-relaxed text-fg">{warning.message}</p>
+            </div>
+            <p className="mt-3 border-t border-danger-fg/20 pt-2.5 text-[11px] leading-relaxed text-fg-2">
+              {Math.max(0, maxViolations - violationsCount)} peringatan tersisa. Sesi dihentikan otomatis pada
+              pelanggaran ke-{maxViolations}.
+            </p>
+          </div>
+        </Modal>
+      )}
+
       {modal === "section" && next && (
         <Modal
-          title={`Lanjut ke subtes ${next.name}?`}
-          description={`Anda tidak dapat kembali ke subtes ${active.name}. Waktu ${next.minutes} menit akan dimulai.`}
+          title={`Lanjut ke ${next.name}?`}
+          description={`Tidak bisa kembali ke ${active.name}. Waktu ${next.minutes} menit dimulai.`}
           onClose={closeModal}
           actions={
             <>
@@ -378,8 +460,8 @@ export default function Run() {
           title="Selesaikan tes?"
           description={
             unanswered === 0
-              ? "Semua soal sudah dijawab. Jawaban tidak dapat diubah setelah tes selesai."
-              : `${unanswered} soal belum dijawab. Jawaban tidak dapat diubah setelah tes selesai.`
+              ? "Jawaban tidak bisa diubah setelah tes selesai."
+              : `${unanswered} soal belum dijawab. Jawaban tidak bisa diubah setelah tes selesai.`
           }
           onClose={closeModal}
           actions={
@@ -393,7 +475,7 @@ export default function Run() {
                   closeModal();
                 }}
               >
-                Selesaikan tes
+                Selesaikan
               </Button>
             </>
           }

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { sections, totalQuestions } from "../src/data/test.ts";
 import { scoreSession, type Session } from "../src/lib/store.ts";
+import { isMobileDevice, isVirtualCamera } from "../src/lib/guards.ts";
 
 const ids = new Set<string>();
 let cognitive = 0;
@@ -67,6 +68,7 @@ const base: Session = {
   section: sections.length - 1,
   deadline: 1,
   answers: {},
+  violations: [],
   reviewed: false,
   forceStop: false,
 };
@@ -95,6 +97,12 @@ const half = Object.fromEntries(
 );
 const partial = scoreSession({ ...base, answers: half });
 assert.equal(partial.correct, 15, "lima jawaban benar per subtes kognitif harus 15");
+
+// Guard perangkat: Chrome Android harus ditolak, kamera virtual harus terdeteksi dari label.
+assert.equal(isMobileDevice("Mozilla/5.0 (Linux; Android 14) Chrome/126"), true, "Android harus ditolak");
+assert.equal(isMobileDevice("Mozilla/5.0 (Windows NT 10.0) Chrome/126"), false, "desktop harus lolos");
+assert.equal(isVirtualCamera("OBS Virtual Camera"), true, "OBS harus terdeteksi");
+assert.equal(isVirtualCamera("Integrated Camera (04f2:b6d9)"), false, "kamera fisik harus lolos");
 
 console.log(
   `check-data: ${sections.length} subtes, ${cognitive} kognitif, ${personality} kepribadian, ${totalQuestions} soal — lolos`,

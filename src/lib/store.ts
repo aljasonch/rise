@@ -11,6 +11,7 @@ export const config = {
   criticalMs: 60000,
   toastMs: 5000,
   minuteMs: 60000,
+  maxViolations: 5,
 };
 
 // ==========================================
@@ -43,9 +44,38 @@ export const ssoProfiles: Identity[] = [
 export const defaultSsoUser: Identity = ssoProfiles[0];
 
 // ==========================================
-// 3. Status & Tipe Sesi
+// 3. Status, Pelanggaran & Tipe Sesi
 // ==========================================
 export type Status = "berlangsung" | "selesai" | "waktu_habis" | "dihentikan";
+
+export type PrecheckKind = "browser" | "monitor" | "internet" | "webcam";
+
+export type ViolationKind =
+  | PrecheckKind
+  | "fullscreen"
+  | "screenshot"
+  | "screenrecord"
+  | "copy";
+
+export type Violation = {
+  id: string;
+  kind: ViolationKind;
+  message: string;
+  timestamp: number;
+  // Snapshot kamera disimpan di IndexedDB (snapshot:<id>), bukan localStorage.
+  snapshot?: boolean;
+};
+
+export const violationLabel: Record<ViolationKind, string> = {
+  browser: "Browser tidak didukung",
+  monitor: "Layar eksternal terdeteksi",
+  internet: "Koneksi internet bermasalah",
+  webcam: "Kamera atau wajah bermasalah",
+  fullscreen: "Keluar dari layar penuh",
+  screenshot: "Percobaan tangkapan layar",
+  screenrecord: "Percobaan perekaman layar",
+  copy: "Copy atau shortcut terlarang",
+};
 
 export type Session = {
   id: string;
@@ -56,6 +86,7 @@ export type Session = {
   section: number;
   deadline: number;
   answers: Record<string, number>;
+  violations: Violation[];
   reviewed: boolean;
   forceStop: boolean;
 };
@@ -158,6 +189,7 @@ type State = {
   answer: (questionId: string, value: number) => void;
   nextSection: () => void;
   finish: (status: Status) => void;
+  recordViolation: (kind: ViolationKind, message: string, snapshot?: boolean) => Violation | null;
   markReviewed: (sessionId: string) => void;
   stop: (sessionId: string) => void;
   clearActive: () => void;
@@ -180,6 +212,7 @@ const newSession = (candidate: Identity): Session => ({
   section: 0,
   deadline: now() + sections[0].minutes * config.minuteMs,
   answers: {},
+  violations: [],
   reviewed: false,
   forceStop: false,
 });
@@ -203,13 +236,14 @@ const isSession = (value: unknown): value is Session => {
 const sanitizeSessions = (value: unknown): Record<string, Session> => {
   if (!value || typeof value !== "object") return {};
 
-  const sessions = Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(
-      ([id, session]) => !id.startsWith("seed-") && isSession(session),
-    ),
-  ) as Record<string, Session>;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([id, session]) => !id.startsWith("seed-") && isSession(session))
+    .map(([id, session]) => {
+      const s = session as Session;
+      return [id, { ...s, violations: Array.isArray(s.violations) ? s.violations : [] }] as const;
+    });
 
-  return sessions;
+  return Object.fromEntries(entries);
 };
 
 export const useStore = create<State>()(
@@ -266,6 +300,34 @@ export const useStore = create<State>()(
               : session,
           ),
 
+        recordViolation: (kind, message, snapshot) => {
+          const id = get().activeId;
+          const current = get().sessions[id];
+          if (!current || current.status !== "berlangsung") return null;
+
+          const item: Violation = {
+            id: uid(),
+            kind,
+            message,
+            timestamp: now(),
+            ...(snapshot ? { snapshot: true } : {}),
+          };
+          const nextViolations = [...(current.violations ?? []), item];
+          const reachedMax = nextViolations.length >= config.maxViolations;
+
+          set((state) => ({
+            sessions: withSession(state.sessions, id, (session) => ({
+              ...session,
+              violations: nextViolations,
+              status: reachedMax ? "dihentikan" : session.status,
+              endedAt: reachedMax ? now() : session.endedAt,
+              forceStop: reachedMax ? true : session.forceStop,
+            })),
+          }));
+
+          return item;
+        },
+
         markReviewed: (sessionId) =>
           set((state) => ({
             sessions: withSession(state.sessions, sessionId, (session) => ({ ...session, reviewed: true })),
@@ -285,7 +347,7 @@ export const useStore = create<State>()(
     },
     {
       name: "rise-sessions",
-      version: 4,
+      version: 5,
       skipHydration: true,
       partialize: (state) => ({ sessions: state.sessions, activeId: state.activeId }),
       migrate: (persistedState) => {

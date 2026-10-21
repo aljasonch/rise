@@ -23,8 +23,8 @@ export default function Hydrate({ children }: { children: React.ReactNode }) {
       <div className="grid min-h-screen place-items-center px-6">
         <div role="status" className="flex flex-col items-center gap-4 text-center">
           <Brand />
-          <span className="inline-flex items-center gap-2 text-sm text-muted">
-            <Spinner size={16} />
+          <span className="inline-flex items-center gap-2 text-sm text-chalk-2">
+            <Spinner size={15} />
             Menyiapkan data sesi
           </span>
         </div>

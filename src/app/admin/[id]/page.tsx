@@ -1,24 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { use, useState } from "react";
-import {
-  FiArrowLeft,
-  FiBarChart2,
-  FiClock,
-  FiLayers,
-  FiMail,
-  FiShield,
-  FiUser,
-} from "react-icons/fi";
-import { AdminHeader, Badge, Button, Card, EmptyState, Metric, Modal, ProgressBar } from "@/components/ui";
+import { get as idbGet, keys as idbKeys } from "idb-keyval";
+import { use, useEffect, useState } from "react";
+import { FiArrowLeft, FiMail, FiShield, FiUser } from "react-icons/fi";
+import { AdminHeader, Button, EmptyState, Lamp, LinkButton, Modal, Panel, Stat } from "@/components/ui";
 import { sections, totalQuestions } from "@/data/test";
-import { scoreSession, statusLabel, useNow, useStore, type Status } from "@/lib/store";
+import {
+  config,
+  scoreSession,
+  statusLabel,
+  useNow,
+  useStore,
+  violationLabel,
+  type Status,
+} from "@/lib/store";
 
 const duration = (ms: number) => {
   const minutes = Math.max(0, Math.floor(ms / 60000));
-  if (minutes >= 60) return `${Math.floor(minutes / 60)} jam ${minutes % 60} menit`;
-  return `${minutes} menit`;
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}j ${minutes % 60}m`;
+  return `${minutes}m`;
 };
 
 const clock = (ms: number) => {
@@ -36,14 +37,14 @@ const dateTime = (ms: number) =>
     hour12: false,
   });
 
-const statusTone = (status: Status) =>
+const lampTone = (status: Status) =>
   status === "berlangsung"
-    ? ("accent" as const)
-    : status === "selesai"
-      ? ("ok" as const)
+    ? ("ok" as const)
+    : status === "dihentikan"
+      ? ("danger" as const)
       : status === "waktu_habis"
         ? ("warn" as const)
-        : ("danger" as const);
+        : ("idle" as const);
 
 export default function SessionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -53,7 +54,35 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
 
   const [confirmStop, setConfirmStop] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
+  const [snapshots, setSnapshots] = useState<Record<string, string>>({});
+  const [evidence, setEvidence] = useState<{ key: string; url: string }[]>([]);
   const now = useNow(1000);
+
+  useEffect(() => {
+    const urls: string[] = [];
+    void (async () => {
+      const found: Record<string, string> = {};
+      for (const violation of session?.violations ?? []) {
+        const shot = (await idbGet(`snapshot:${violation.id}`)) as string | undefined;
+        if (shot) found[violation.id] = shot;
+      }
+      setSnapshots(found);
+
+      const clips = ((await idbKeys()) as IDBValidKey[])
+        .filter((key) => typeof key === "string" && key.startsWith(`evidence:${id}:`))
+        .sort();
+      const list = await Promise.all(
+        clips.map(async (key) => ({
+          key: String(key),
+          url: URL.createObjectURL((await idbGet(key)) as Blob),
+        })),
+      );
+      urls.push(...list.map((clip) => clip.url));
+      setEvidence(list);
+    })();
+
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [id, session?.violations]);
 
   if (!session) {
     return (
@@ -61,17 +90,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         <AdminHeader />
         <main className="mx-auto w-full max-w-[1280px] px-5 py-12 sm:px-8">
           <EmptyState
-            icon={<FiUser aria-hidden size={22} />}
+            icon={<FiUser aria-hidden size={20} />}
             title="Sesi tidak ditemukan"
-            description="Sesi yang dicari mungkin sudah dihapus atau tidak pernah dibuat."
+            description="Sesi yang dicari mungkin sudah dihapus."
             action={
-              <Link
-                href="/admin"
-                className="inline-flex items-center gap-2 rounded-input border border-ink bg-ink px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
-              >
-                <FiArrowLeft aria-hidden size={16} />
-                Kembali ke daftar sesi
-              </Link>
+              <LinkButton href="/admin" icon={<FiArrowLeft aria-hidden size={15} />}>
+                Daftar sesi
+              </LinkButton>
             }
           />
         </main>
@@ -81,6 +106,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
 
   const score = scoreSession(session);
   const answered = Object.keys(session.answers).length;
+  const violations = session.violations ?? [];
   const running = session.status === "berlangsung";
   const left = Math.max(0, session.deadline - now);
   const currentSection = sections[session.section];
@@ -90,30 +116,27 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       <AdminHeader />
 
       <main className="mx-auto w-full max-w-[1280px] px-5 py-8 sm:px-8">
-        <div className="mb-6">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 text-xs font-medium text-muted transition-colors hover:text-ink"
-          >
-            <FiArrowLeft aria-hidden size={14} />
-            Daftar sesi
-          </Link>
-        </div>
+        <Link
+          href="/admin"
+          className="inline-flex items-center gap-2 rounded-input px-2.5 py-1.5 text-xs font-medium text-chalk-2 transition-colors hover:bg-fill hover:text-chalk"
+        >
+          <FiArrowLeft aria-hidden size={14} />
+          Daftar sesi
+        </Link>
 
-        {/* Session Header */}
-        <div className="flex flex-col gap-4 border-b border-line pb-6 sm:flex-row sm:items-start sm:justify-between">
+        <header className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight">{session.candidate.name}</h1>
-              <Badge tone={statusTone(session.status)} dot>
-                {statusLabel[session.status]}
-              </Badge>
-              {session.reviewed && <Badge tone="ok">Sudah ditinjau</Badge>}
+              <h1 className="text-2xl font-semibold tracking-tight text-chalk">
+                {session.candidate.name}
+              </h1>
+              <Lamp tone={lampTone(session.status)}>{statusLabel[session.status]}</Lamp>
+              {session.reviewed && <Lamp tone="ok">Ditinjau</Lamp>}
             </div>
-            <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-chalk-2">
               <span>{session.candidate.position}</span>
-              <span aria-hidden>·</span>
-              <span className="inline-flex items-center gap-1">
+              <span aria-hidden className="h-3 w-px bg-chassis-3" />
+              <span className="inline-flex items-center gap-1.5">
                 <FiMail aria-hidden size={13} />
                 {session.candidate.email}
               </span>
@@ -123,7 +146,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           <div className="flex flex-wrap items-center gap-2">
             {!session.reviewed && !running && (
               <Button variant="secondary" onClick={() => markReviewed(session.id)}>
-                Tandai sudah ditinjau
+                Tandai ditinjau
               </Button>
             )}
             {running && (
@@ -132,98 +155,147 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
               </Button>
             )}
           </div>
-        </div>
+        </header>
 
-        {/* Proctoring Notice */}
-        <div className="mt-6 rounded-card border border-line bg-surface-muted p-4">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface text-muted">
-              <FiShield aria-hidden size={14} />
-            </span>
-            <div className="text-xs">
-              <p className="font-medium text-ink">Fitur Pengawasan (Proctoring)</p>
-              <p className="mt-0.5 leading-relaxed text-muted">
-                Proctoring lama (deteksi wajah MediaPipe, kunci layar/fullscreen, rekaman kamera) telah dibersihkan
-                dari sistem. Fitur proctoring baru siap dibangun dari awal sesuai kebutuhan spesifikasi.
-              </p>
-            </div>
-          </div>
-        </div>
+        <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-card border border-chassis-3 bg-chassis-3 sm:grid-cols-3 lg:grid-cols-5">
+          {[
+            {
+              label: "Skor kognitif",
+              value: score.answered === 0 ? "—" : `${score.correct}/${score.total}`,
+              note: score.answered === 0 ? undefined : `${score.percent}%`,
+            },
+            {
+              label: "Terjawab",
+              value: `${answered}/${totalQuestions}`,
+              note: `${Math.round((answered / totalQuestions) * 100)}%`,
+            },
+            {
+              label: "Pelanggaran",
+              value: `${violations.length}/${config.maxViolations}`,
+              note: violations.length >= config.maxViolations ? "Dihentikan" : undefined,
+            },
+            {
+              label: "Durasi",
+              value: duration((session.endedAt ?? now) - session.startedAt),
+              note: dateTime(session.startedAt),
+            },
+            {
+              label: running ? "Sisa waktu" : "Status waktu",
+              value: running ? clock(left) : session.endedAt ? "Selesai" : "Habis",
+              note: currentSection?.name,
+            },
+          ].map((item) => (
+            <Stat
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              note={item.note}
+              className="bg-chassis-2 px-4 py-3.5"
+            />
+          ))}
+        </dl>
 
-        {/* Metrics Grid */}
-        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Metric
-            label="Skor Kognitif"
-            value={score.answered === 0 ? "—" : `${score.correct}/${score.total}`}
-            hint={score.answered === 0 ? "Belum ada jawaban" : `${score.percent}% akurasi`}
-            icon={<FiBarChart2 aria-hidden size={16} />}
-          />
-          <Metric
-            label="Soal Terjawab"
-            value={
-              <span>
-                {answered}
-                <span className="text-base font-normal text-muted">/{totalQuestions}</span>
+        <div className="mt-6 grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+          <Panel className="overflow-hidden">
+            <header className="flex items-center justify-between gap-3 border-b border-chassis-3 px-4 py-3">
+              <h2 className="flex items-center gap-2 text-sm font-medium text-chalk">
+                <FiShield aria-hidden size={15} className="text-chalk-2" />
+                Log pengawasan
+              </h2>
+              <span className="readout text-xs text-chalk-2">
+                {violations.length}/{config.maxViolations}
               </span>
-            }
-            hint={`Progres ${Math.round((answered / totalQuestions) * 100)}%`}
-            icon={<FiLayers aria-hidden size={16} />}
-          />
-          <Metric
-            label="Durasi"
-            value={duration((session.endedAt ?? now) - session.startedAt)}
-            hint={`Mulai: ${dateTime(session.startedAt)}`}
-            icon={<FiClock aria-hidden size={16} />}
-          />
-          <Metric
-            label={running ? "Sisa Waktu Subtes" : "Status Waktu"}
-            value={running ? clock(left) : session.endedAt ? "Selesai" : "Waktu habis"}
-            hint={running ? `Subtes ${session.section + 1} (${currentSection?.name})` : undefined}
-            icon={<FiClock aria-hidden size={16} />}
-          />
+            </header>
+
+            {violations.length === 0 ? (
+              <p className="px-4 py-5 text-sm text-chalk-2">Tidak ada pelanggaran.</p>
+            ) : (
+              <ul className="divide-y divide-chassis-3">
+                {violations.map((v, idx) => (
+                  <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="readout shrink-0 text-xs text-chalk-2">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
+                      <span className="text-sm font-medium text-chalk">{violationLabel[v.kind]}</span>
+                      <span className="min-w-0 truncate text-xs text-chalk-2">{v.message}</span>
+                    </div>
+                    <span className="readout shrink-0 text-[11px] text-chalk-2">
+                      {dateTime(v.timestamp)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+
+          <Panel className="overflow-hidden">
+            <header className="flex items-center justify-between gap-3 border-b border-chassis-3 px-4 py-3">
+              <h2 className="text-sm font-medium text-chalk">Bukti</h2>
+              <span className="readout text-xs text-chalk-2">
+                {Object.keys(snapshots).length + evidence.length}
+              </span>
+            </header>
+
+            {Object.keys(snapshots).length === 0 && evidence.length === 0 ? (
+              <p className="px-4 py-5 text-sm text-chalk-2">Tidak ada bukti tersimpan.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2 p-4">
+                {violations
+                  .filter((v) => snapshots[v.id])
+                  .map((v) => (
+                    <a
+                      key={v.id}
+                      href={snapshots[v.id]}
+                      download={`snapshot-${v.kind}-${v.timestamp}.jpg`}
+                      title={v.message}
+                      className="overflow-hidden rounded-input border border-chassis-3"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- data URL, bukan aset Next */}
+                      <img src={snapshots[v.id]} alt={violationLabel[v.kind]} className="h-20 w-28 object-cover" />
+                    </a>
+                  ))}
+                {evidence.map((clip) => (
+                  <video
+                    key={clip.key}
+                    controls
+                    src={clip.url}
+                    className="h-20 rounded-input border border-chassis-3 bg-black"
+                  />
+                ))}
+              </div>
+            )}
+          </Panel>
         </div>
 
-        {/* Subtest Breakdown */}
-        <div className="mt-8">
-          <h2 className="text-base font-semibold">Hasil per Subtes</h2>
+        <section className="mt-8">
+          <h2 className="text-base font-semibold text-chalk">Hasil per subtes</h2>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {score.sections.map((sec, idx) => (
-              <Card key={sec.id} className="p-4">
+              <Panel key={sec.id} className="p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-ink">
+                  <span className="text-sm font-medium text-chalk">
                     {idx + 1}. {sec.name}
                   </span>
-                  <Badge tone={sec.kind === "kognitif" ? "neutral" : "accent"}>
+                  <Lamp tone={sec.kind === "kognitif" ? "idle" : "ok"}>
                     {sec.kind === "kognitif" ? "Kognitif" : "Sikap"}
-                  </Badge>
+                  </Lamp>
                 </div>
-                <div className="mt-3 space-y-2 text-xs">
-                  <div className="flex justify-between text-muted">
-                    <span>Terjawab</span>
-                    <span className="font-medium text-ink tabular-nums">
-                      {sec.answered}/{sec.total}
-                    </span>
-                  </div>
-                  {sec.kind === "kognitif" && (
-                    <div className="flex justify-between text-muted">
-                      <span>Benar</span>
-                      <span className="font-medium text-ink tabular-nums">
-                        {sec.correct}/{sec.total} ({sec.percent}%)
-                      </span>
-                    </div>
-                  )}
-                  <ProgressBar value={sec.answered} max={sec.total} label={`Progres ${sec.name}`} />
-                </div>
-              </Card>
+                <p className="readout mt-3 text-lg text-chalk">
+                  {sec.answered}/{sec.total}
+                  <span className="ml-1.5 text-xs text-chalk-2">
+                    {sec.kind === "kognitif" ? `${sec.correct} benar` : "terjawab"}
+                  </span>
+                </p>
+              </Panel>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* Detailed Question Review */}
-        <div className="mt-8">
+        <section className="mt-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-base font-semibold">Rincian Jawaban Soal</h2>
-            <div className="flex flex-wrap gap-1 border-b border-line sm:border-b-0">
+            <h2 className="text-base font-semibold text-chalk">Rincian jawaban</h2>
+            <div className="flex flex-wrap gap-1 rounded-input border border-chassis-3 p-1">
               {sections.map((sec, idx) => (
                 <button
                   key={sec.id}
@@ -231,8 +303,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                   onClick={() => setActiveTab(idx)}
                   className={`rounded-input px-3 py-1.5 text-xs font-medium transition-colors ${
                     activeTab === idx
-                      ? "bg-ink text-white"
-                      : "text-muted hover:bg-surface-muted hover:text-ink"
+                      ? "bg-signal text-chassis"
+                      : "text-chalk-2 hover:bg-fill hover:text-chalk"
                   }`}
                 >
                   {sec.name}
@@ -249,30 +321,24 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
               const isCorrect = isCognitive && selectedValue === question.answer;
 
               return (
-                <Card key={question.id} className="p-4 sm:p-5">
+                <article key={question.id} className="sheet p-4 sm:p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-line bg-surface-muted text-xs font-semibold text-muted">
+                      <span className="readout mt-0.5 grid size-6 shrink-0 place-items-center rounded-input border border-rule bg-paper-2 text-xs font-medium text-muted">
                         {qIdx + 1}
                       </span>
-                      <div>
-                        <p className="text-sm font-medium leading-relaxed text-ink">{question.text}</p>
-                      </div>
+                      <p className="text-sm font-medium leading-relaxed text-ink">{question.text}</p>
                     </div>
                     {isAnswered ? (
-                      isCognitive ? (
-                        <Badge tone={isCorrect ? "ok" : "danger"} dot>
-                          {isCorrect ? "Benar" : "Salah"}
-                        </Badge>
-                      ) : (
-                        <Badge tone="ok">Terjawab</Badge>
-                      )
+                      <Lamp tone={isCognitive ? (isCorrect ? "ok" : "danger") : "ok"}>
+                        {isCognitive ? (isCorrect ? "Benar" : "Salah") : "Terjawab"}
+                      </Lamp>
                     ) : (
-                      <Badge tone="neutral">Belum dijawab</Badge>
+                      <Lamp tone="idle">Kosong</Lamp>
                     )}
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-2 pl-9 text-xs sm:grid-cols-2">
+                  <div className="mt-4 grid grid-cols-1 gap-1.5 pl-9 text-xs sm:grid-cols-2">
                     {question.options.map((opt, optIdx) => {
                       const isSelected = selectedValue === optIdx;
                       const isKey = isCognitive && question.answer === optIdx;
@@ -280,41 +346,41 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                       return (
                         <div
                           key={opt}
-                          className={`flex items-start gap-2.5 rounded-input border p-2.5 transition-colors ${
+                          className={`flex items-start gap-2.5 rounded-input border p-2.5 ${
                             isSelected && isKey
-                              ? "border-accent bg-accent-soft text-ink font-medium"
+                              ? "border-ink bg-ink/8 font-medium text-ink"
                               : isSelected && !isKey
-                                ? "border-danger/30 bg-surface-muted text-danger font-medium"
+                                ? "border-danger/40 bg-danger/8 font-medium text-danger"
                                 : isKey
-                                  ? "border-accent/40 bg-surface-muted text-ink font-medium"
-                                  : "border-line bg-surface text-muted"
+                                  ? "border-ink/30 bg-paper-2 text-ink"
+                                  : "border-rule bg-paper-2 text-muted"
                           }`}
                         >
                           <span
-                            className={`grid size-5 shrink-0 place-items-center rounded-full border text-[10px] font-semibold ${
-                              isSelected ? "border-accent bg-accent text-white" : "border-line text-muted"
+                            className={`readout grid size-5 shrink-0 place-items-center rounded-input border text-[10px] font-semibold ${
+                              isSelected
+                                ? "border-ink bg-ink text-paper"
+                                : "border-rule bg-paper text-muted"
                             }`}
                           >
                             {String.fromCharCode(65 + optIdx)}
                           </span>
                           <span className="min-w-0 flex-1 leading-relaxed">{opt}</span>
-                          {isSelected && <span className="text-[10px] text-muted">(Pilihan)</span>}
-                          {isKey && !isSelected && <span className="text-[10px] text-muted">(Kunci)</span>}
                         </div>
                       );
                     })}
                   </div>
-                </Card>
+                </article>
               );
             })}
           </div>
-        </div>
+        </section>
       </main>
 
       {confirmStop && (
         <Modal
-          title="Hentikan sesi peserta?"
-          description="Sesi peserta akan langsung berstatus 'dihentikan'. Tindakan ini tidak dapat dibatalkan."
+          title="Hentikan sesi?"
+          description="Sesi akan langsung berstatus dihentikan dan tidak bisa dibatalkan."
           onClose={() => setConfirmStop(false)}
           actions={
             <>
@@ -328,7 +394,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                   setConfirmStop(false);
                 }}
               >
-                Hentikan sesi
+                Hentikan
               </Button>
             </>
           }

@@ -157,7 +157,7 @@ export default function Run() {
             className="mt-5 inline-flex items-center gap-2 rounded-input border border-white/25 bg-white/15 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-white/25"
           >
             <FiMaximize aria-hidden size={14} />
-            Kembali ke layar penuh
+            {guardScreenShare() ? "Kembali ke layar penuh" : "Bagikan seluruh layar & lanjutkan"}
           </button>
         )}
       </div>

@@ -15,6 +15,13 @@ import {
   violationLabel,
   type Status,
 } from "@/lib/store";
+import type { Capture, CaptureMoment } from "@/lib/proctor";
+
+const captureLabel: Record<CaptureMoment, string> = {
+  mulai: "Mulai",
+  berkala: "Berkala",
+  selesai: "Selesai",
+};
 
 const duration = (ms: number) => {
   const minutes = Math.max(0, Math.floor(ms / 60000));
@@ -55,11 +62,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [confirmStop, setConfirmStop] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [snapshots, setSnapshots] = useState<Record<string, string>>({});
-  const [evidence, setEvidence] = useState<{ key: string; url: string }[]>([]);
+  const [captures, setCaptures] = useState<Capture[]>([]);
   const now = useNow(1000);
+  // Tangkapan berkala ditulis tab peserta; muat ulang tiap 30 dtk selama sesi berjalan.
+  const refreshTick = session?.status === "berlangsung" ? Math.floor(now / 30_000) : 0;
 
   useEffect(() => {
-    const urls: string[] = [];
     void (async () => {
       const found: Record<string, string> = {};
       for (const violation of session?.violations ?? []) {
@@ -68,21 +76,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       }
       setSnapshots(found);
 
-      const clips = ((await idbKeys()) as IDBValidKey[])
-        .filter((key) => typeof key === "string" && key.startsWith(`evidence:${id}:`))
+      const keys = ((await idbKeys()) as IDBValidKey[])
+        .filter((key) => typeof key === "string" && key.startsWith(`capture:${id}:`))
         .sort();
-      const list = await Promise.all(
-        clips.map(async (key) => ({
-          key: String(key),
-          url: URL.createObjectURL((await idbGet(key)) as Blob),
-        })),
-      );
-      urls.push(...list.map((clip) => clip.url));
-      setEvidence(list);
+      setCaptures((await Promise.all(keys.map((key) => idbGet(key)))) as Capture[]);
     })();
-
-    return () => urls.forEach((url) => URL.revokeObjectURL(url));
-  }, [id, session?.violations]);
+  }, [id, session?.violations, session?.status, refreshTick]);
 
   if (!session) {
     return (
@@ -233,36 +232,61 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             <header className="flex items-center justify-between gap-3 border-b border-chassis-3 px-4 py-3">
               <h2 className="text-sm font-medium text-chalk">Bukti</h2>
               <span className="readout text-xs text-chalk-2">
-                {Object.keys(snapshots).length + evidence.length}
+                {Object.keys(snapshots).length + captures.length}
               </span>
             </header>
 
-            {Object.keys(snapshots).length === 0 && evidence.length === 0 ? (
+            {Object.keys(snapshots).length === 0 && captures.length === 0 ? (
               <p className="px-4 py-5 text-sm text-chalk-2">Tidak ada bukti tersimpan.</p>
             ) : (
-              <div className="flex flex-wrap gap-2 p-4">
-                {violations
-                  .filter((v) => snapshots[v.id])
-                  .map((v) => (
-                    <a
-                      key={v.id}
-                      href={snapshots[v.id]}
-                      download={`snapshot-${v.kind}-${v.timestamp}.jpg`}
-                      title={v.message}
-                      className="overflow-hidden rounded-input border border-chassis-3"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- data URL, bukan aset Next */}
-                      <img src={snapshots[v.id]} alt={violationLabel[v.kind]} className="h-20 w-28 object-cover" />
-                    </a>
-                  ))}
-                {evidence.map((clip) => (
-                  <video
-                    key={clip.key}
-                    controls
-                    src={clip.url}
-                    className="h-20 rounded-input border border-chassis-3 bg-black"
-                  />
+              <div className="space-y-4 p-4">
+                {captures.map((cap) => (
+                  <div key={cap.timestamp}>
+                    <p className="readout text-[11px] text-chalk-2">
+                      {captureLabel[cap.moment]} · {dateTime(cap.timestamp)}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-2">
+                      {[
+                        { src: cap.screen, name: "layar" },
+                        { src: cap.camera, name: "kamera" },
+                      ]
+                        .filter((shot) => shot.src)
+                        .map((shot) => (
+                          <a
+                            key={shot.name}
+                            href={shot.src}
+                            download={`${shot.name}-${cap.moment}-${cap.timestamp}.jpg`}
+                            title={`${shot.name} (${captureLabel[cap.moment]})`}
+                            className="overflow-hidden rounded-input border border-chassis-3"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element -- data URL, bukan aset Next */}
+                            <img src={shot.src} alt={shot.name} className="h-20 w-32 object-cover" />
+                          </a>
+                        ))}
+                    </div>
+                  </div>
                 ))}
+                {Object.keys(snapshots).length > 0 && (
+                  <div>
+                    <p className="readout text-[11px] text-chalk-2">Kamera saat pelanggaran</p>
+                    <div className="mt-1.5 flex flex-wrap gap-2">
+                      {violations
+                        .filter((v) => snapshots[v.id])
+                        .map((v) => (
+                          <a
+                            key={v.id}
+                            href={snapshots[v.id]}
+                            download={`snapshot-${v.kind}-${v.timestamp}.jpg`}
+                            title={v.message}
+                            className="overflow-hidden rounded-input border border-chassis-3"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element -- data URL, bukan aset Next */}
+                            <img src={snapshots[v.id]} alt={violationLabel[v.kind]} className="h-20 w-28 object-cover" />
+                          </a>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </Panel>

@@ -30,6 +30,7 @@ export type CheckItem = {
   label: string;
   state: CheckState;
   detail: string;
+  note?: string;
   pingMs?: number;
 };
 
@@ -61,7 +62,7 @@ type ScreenWithExtended = Screen & {
 // 0. Wajib Berbagi Seluruh Layar (dipanggil di dalam gesture klik Mulai)
 // ==========================================
 let screenStream: MediaStream | null = null;
-let screenRecorder: MediaRecorder | null = null;
+let screenVideo: HTMLVideoElement | null = null;
 let shareEndedHandler: (() => void) | null = null;
 
 export function setShareEndedHandler(fn: (() => void) | null) {
@@ -72,19 +73,22 @@ export const screenShareActive = () =>
   Boolean(screenStream?.getVideoTracks().some((track) => track.readyState === "live"));
 
 function releaseScreenShare() {
-  if (screenRecorder && screenRecorder.state !== "inactive") screenRecorder.stop();
-  screenRecorder = null;
   screenStream?.getTracks().forEach((track) => track.stop());
   screenStream = null;
+  if (screenVideo) {
+    screenVideo.pause();
+    screenVideo.srcObject = null;
+  }
 }
 
 // Salinan asli disimpan karena guard memasang patch penolak di mediaDevices.getDisplayMedia.
 const nativeGetDisplayMedia =
   typeof navigator !== "undefined" ? navigator.mediaDevices?.getDisplayMedia.bind(navigator.mediaDevices) : undefined;
 
-// Gagal = resolve tanpa throw; pemanggil memeriksa screenShareActive().
+// Gagal = resolve tanpa throw; pemanggil memeriksa guardScreenShare().
 export async function requestScreenShare(): Promise<void> {
-  if (screenShareActive() || !nativeGetDisplayMedia) return;
+  if (guardScreenShare() || !nativeGetDisplayMedia) return;
+  releaseScreenShare();
   try {
     const stream = await nativeGetDisplayMedia({
       video: { displaySurface: "monitor" },
@@ -106,31 +110,45 @@ export function guardScreenShare() {
   const live =
     screenStream?.getVideoTracks().filter((track) => track.readyState === "live") ?? [];
   // Tergantung kebijakan browser, pilihan Tab/Jendela bisa dilaporkan "monitor" saat share.
-  // Bukti sesi (rekaman layar) menutup kasus itu pada peninjauan.
+  // Bukti sesi (tangkapan layar berkala) menutup kasus itu pada peninjauan.
   return live.length > 0 && live.every((track) => track.getSettings().displaySurface === "monitor");
 }
 
-export async function recordScreenEvidence(sessionId: string): Promise<void> {
-  const stream = screenStream;
-  if (!stream || !screenShareActive() || typeof MediaRecorder === "undefined") return;
-  if (screenRecorder && screenRecorder.state !== "inactive") return;
-  try {
-    const recorder = new MediaRecorder(stream, {
-      mimeType: "video/webm;codecs=vp8",
-      videoBitsPerSecond: 300_000,
-    });
-    screenRecorder = recorder;
-    // Satu slice = satu entri IndexedDB, supaya rekaman 2 jam tidak menumpuk di RAM.
-    // ponytail: tanpa kuota/eviction handling; pindah ke backend bila bukti harus permanen.
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        void idbSet(`evidence:${sessionId}:${String(Date.now())}`, event.data).catch(() => undefined);
-      }
-    };
-    recorder.start(20_000);
-  } catch {
-    // Perangkat tanpa dukungan MediaRecorder tetap boleh ujian
+// Frame video -> JPEG data URL; layar diperkecil agar entri IndexedDB tetap kecil.
+function frameOf(video: HTMLVideoElement | null, maxWidth: number): string | undefined {
+  if (!video?.videoWidth) return;
+  const scale = Math.min(1, maxWidth / video.videoWidth);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.6);
+}
+
+async function captureScreen(): Promise<string | undefined> {
+  if (!screenStream || !screenShareActive()) return;
+  if (!screenVideo) {
+    screenVideo = document.createElement("video");
+    screenVideo.muted = true;
+    screenVideo.playsInline = true;
   }
+  if (screenVideo.srcObject !== screenStream) screenVideo.srcObject = screenStream;
+  if (screenVideo.paused) await screenVideo.play();
+  return frameOf(screenVideo, 1280);
+}
+
+export type CaptureMoment = "mulai" | "berkala" | "selesai";
+export type Capture = { moment: CaptureMoment; timestamp: number; screen?: string; camera?: string };
+
+// Hanya memakai stream yang masih hidup, jadi tidak pernah memicu prompt izin baru.
+// ponytail: tanpa kuota/eviction handling; pindah ke backend bila bukti harus permanen.
+export async function captureEvidence(sessionId: string, moment: CaptureMoment): Promise<void> {
+  const camera = captureSnapshot();
+  const screen = await captureScreen().catch(() => undefined);
+  if (!screen && !camera) return;
+  const timestamp = Date.now();
+  const entry: Capture = { moment, timestamp, screen, camera };
+  await idbSet(`capture:${sessionId}:${String(timestamp)}`, entry).catch(() => undefined);
 }
 
 export function stopScreenEvidence() {
@@ -309,14 +327,10 @@ async function getFaceDetector(): Promise<FaceDetectorInstance> {
   return detectorPromise;
 }
 
-// Snapshot frame kamera sebagai bukti pelanggaran; hanya URL objek, jadi murah.
+// Snapshot frame kamera (data URL JPEG) untuk bukti pelanggaran dan tangkapan berkala.
 function captureSnapshot(): string | undefined {
-  if (!sharedVideo?.videoWidth) return;
-  const canvas = document.createElement("canvas");
-  canvas.width = sharedVideo.videoWidth;
-  canvas.height = sharedVideo.videoHeight;
-  canvas.getContext("2d")?.drawImage(sharedVideo, 0, 0);
-  return canvas.toDataURL("image/jpeg", 0.5);
+  const live = sharedStream?.getVideoTracks().some((track) => track.readyState === "live");
+  return live ? frameOf(sharedVideo, 640) : undefined;
 }
 
 async function ensureOffscreenVideo(): Promise<HTMLVideoElement> {
@@ -342,6 +356,24 @@ async function ensureOffscreenVideo(): Promise<HTMLVideoElement> {
       },
       audio: false,
     });
+    // Jika browser memilih kamera virtual sebagai default, alihkan ke kamera fisik bila tersedia.
+    if (isVirtualCamera(sharedStream.getVideoTracks()[0]?.label ?? "")) {
+      const devices = (await navigator.mediaDevices.enumerateDevices?.()) ?? [];
+      const physical = devices.find(
+        (d) => d.kind === "videoinput" && d.deviceId && d.label && !isVirtualCamera(d.label),
+      );
+      if (physical) {
+        sharedStream.getTracks().forEach((t) => t.stop());
+        sharedStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: physical.deviceId },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+          audio: false,
+        });
+      }
+    }
     cameraLabel = sharedStream.getVideoTracks()[0]?.label ?? "";
   }
 
@@ -374,7 +406,9 @@ export function stopProctorStream() {
   }
 }
 
-export async function checkWebcamFace(): Promise<{ ok: boolean; detail: string }> {
+const vcamNote = "Tutup aplikasi kamera virtual, lalu Periksa ulang.";
+
+export async function checkWebcamFace(): Promise<{ ok: boolean; detail: string; note?: string }> {
   if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     return { ok: false, detail: "Webcam tidak didukung" };
   }
@@ -394,7 +428,23 @@ export async function checkWebcamFace(): Promise<{ ok: boolean; detail: string }
     }
 
     if (isVirtualCamera(track.label)) {
-      return { ok: false, detail: "Kamera virtual terdeteksi" };
+      return {
+        ok: false,
+        detail: `Kamera virtual terdeteksi: ${track.label}`,
+        note: vcamNote,
+      };
+    }
+
+    const devices = (await navigator.mediaDevices.enumerateDevices?.()) ?? [];
+    const installedVcam = devices.find(
+      (d) => d.kind === "videoinput" && d.label && isVirtualCamera(d.label),
+    );
+    if (installedVcam && process.env.NEXT_PUBLIC_ALLOW_INSTALLED_VCAM !== "true") {
+      return {
+        ok: false,
+        detail: `Kamera virtual terdeteksi: ${installedVcam.label}`,
+        note: vcamNote,
+      };
     }
 
     if (video.readyState < 2 || video.videoWidth === 0) {
@@ -414,7 +464,13 @@ export async function checkWebcamFace(): Promise<{ ok: boolean; detail: string }
       return { ok: false, detail: `${count} wajah (wajib sendiri)` };
     }
 
-    return { ok: true, detail: "1 wajah terdeteksi" };
+    return {
+      ok: true,
+      detail: "1 wajah terdeteksi",
+      ...(installedVcam
+        ? { note: `Kamera virtual terpasang (${installedVcam.label}) diabaikan untuk mode uji.` }
+        : {}),
+    };
   } catch (err) {
     if (err instanceof Error && err.message === "detector") {
       return { ok: false, detail: "Gagal memuat detektor wajah" };
@@ -491,6 +547,7 @@ export function useProctorPrecheck() {
         ...prev.webcam,
         state: camRes.ok ? "ok" : "fail",
         detail: camRes.detail,
+        note: camRes.note,
       },
     }));
 
@@ -673,6 +730,9 @@ export function ProctorChecklist({
                 >
                   {item.detail}
                 </p>
+                {item.note && (
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-chalk-2">{item.note}</p>
+                )}
               </div>
 
               <span
@@ -733,8 +793,12 @@ export function useProctorGuard(enabled: boolean) {
   );
 
   const [warning, setWarning] = useState<Violation | null>(null);
-  const [blanked, setBlanked] = useState(false);
-  const [blankReason, setBlankReason] = useState("");
+  const [blanked, setBlanked] = useState(() => enabled && !guardScreenShare());
+  const [blankReason, setBlankReason] = useState(() =>
+    enabled && !guardScreenShare()
+      ? "Wajib membagikan seluruh layar untuk melanjutkan asesmen."
+      : "",
+  );
   const [isFullscreen, setIsFullscreen] = useState(() =>
     typeof document !== "undefined" ? Boolean(document.fullscreenElement) : true,
   );
@@ -795,28 +859,40 @@ export function useProctorGuard(enabled: boolean) {
     [recordViolation, setInstantBlackout],
   );
 
-  const dismissWarning = useCallback(() => {
-    // Buffer singkat 400ms hanya selama animasi transisi browser masuk kembali ke Fullscreen
-    ignoreViolationsUntilRef.current = Date.now() + 400;
+  const dismissWarning = useCallback(async () => {
+    // Tahan pelanggaran baru selama dialog izin berbagi layar / fullscreen terbuka.
+    warningOpenRef.current = true;
+    setWarning(null);
+
+    await enterFullscreen();
+    await requestScreenShare();
+    const fsOk = isFullscreenActive();
+    const shareOk = guardScreenShare();
+
+    if (!fsOk || !shareOk) {
+      // Tetap kunci layar hitam tanpa menambah hitungan pelanggaran sampai syarat terpenuhi.
+      setInstantBlackout(true);
+      setBlanked(true);
+      setBlankReason(
+        !shareOk
+          ? "Wajib membagikan seluruh layar untuk melanjutkan asesmen."
+          : "Wajib berada dalam mode layar penuh untuk melanjutkan asesmen.",
+      );
+      setIsFullscreen(fsOk);
+      return;
+    }
+
+    ignoreViolationsUntilRef.current = Date.now() + 1500;
     warningOpenRef.current = false;
     modifierHeldRef.current = false;
     faceFailStreakRef.current = 0;
     netFailStreakRef.current = 0;
 
-    // Langsung normalkan layar pada klik pertama
     setInstantBlackout(false);
     setBlanked(false);
     setBlankReason("");
-    setWarning(null);
     setIsFullscreen(true);
-
-    // Panggil enterFullscreen (+ keyboard.lock Escape) tepat di dalam gesture klik user
-    void enterFullscreen().then((ok) => {
-      setIsFullscreen(ok || isFullscreenActive());
-    });
-    // Berbagi layar yang dihentikan hanya bisa dipulihkan lewat gesture klik, jadi ditawarkan di sini.
-    void requestScreenShare().then(() => recordScreenEvidence(sessionId));
-  }, [sessionId, setInstantBlackout]);
+  }, [setInstantBlackout]);
 
   // A. Proctoring UI: Pre-emptive DOM Blackout, Disable Copy, Screenshot, Screenrecord, & Full-screen
   useEffect(() => {
@@ -825,10 +901,13 @@ export function useProctorGuard(enabled: boolean) {
     mountedAtRef.current = Date.now();
     ignoreViolationsUntilRef.current = Date.now() + 500;
 
-    const wasSharing =
-      screenStream?.getVideoTracks().some((track) => track.readyState === "live") ?? false;
-    void recordScreenEvidence(sessionId);
-    if (wasSharing) ignoreViolationsUntilRef.current = Date.now() + 1500;
+    if (guardScreenShare()) {
+      ignoreViolationsUntilRef.current = Date.now() + 1500;
+    } else {
+      // Sesi dimuat ulang tanpa berbagi seluruh layar: langsung kunci sampai dipulihkan.
+      warningOpenRef.current = true;
+      setInstantBlackout(true);
+    }
 
     void enterFullscreen().then((ok) => {
       setIsFullscreen(ok);
@@ -1007,7 +1086,7 @@ export function useProctorGuard(enabled: boolean) {
     if (mediaDevices && hasDisplayMedia) {
       mediaDevices.getDisplayMedia = async () => {
         // Berbagi ulang (mis. setelah "Stop sharing") diizinkan selama sesi, tetap wajib seluruh layar.
-        if (!screenShareActive()) {
+        if (!guardScreenShare()) {
           triggerViolation(
             "screenrecord",
             "Percobaan merekam layar (Screen Recording) terdeteksi dan diblokir",
@@ -1016,7 +1095,7 @@ export function useProctorGuard(enabled: boolean) {
           throw new DOMException("Screen recording is disabled during assessment.", "NotAllowedError");
         }
         await requestScreenShare();
-        if (!screenShareActive()) {
+        if (!guardScreenShare()) {
           throw new DOMException("Seluruh layar wajib dibagikan.", "NotAllowedError");
         }
         return screenStream!;
@@ -1024,15 +1103,15 @@ export function useProctorGuard(enabled: boolean) {
     }
 
     // "Stop sharing" mengakhiri track secara instan; polling 1,5 dtk jadi cadangan.
-    const onShareEnded = () =>
+    const onShareEnded = () => {
+      releaseScreenShare();
       triggerViolation(
         "screenrecord",
         "Berbagi layar dihentikan. Berbagi seluruh layar wajib aktif selama asesmen.",
         true,
       );
-    // Stream awal dibuat sebelum guard ini ter-mount, jadi listener dipasang ke keduanya.
+    };
     setShareEndedHandler(onShareEnded);
-    screenStream?.getTracks().forEach((track) => track.addEventListener("ended", onShareEnded));
 
     const onEnterPiP = (event: Event) => {
       event.preventDefault();
@@ -1065,7 +1144,6 @@ export function useProctorGuard(enabled: boolean) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       document.removeEventListener("enterpictureinpicture", onEnterPiP, true);
-      screenStream?.getTracks().forEach((track) => track.removeEventListener("ended", onShareEnded));
       setShareEndedHandler(null);
 
       if (mediaDevices && originalGetDisplayMedia) {
@@ -1092,7 +1170,8 @@ export function useProctorGuard(enabled: boolean) {
         return;
       }
 
-      if (!screenShareActive()) {
+      if (!guardScreenShare()) {
+        releaseScreenShare();
         triggerViolation(
           "screenrecord",
           "Berbagi seluruh layar tidak aktif. Peserta wajib membagikan seluruh layar.",
@@ -1162,6 +1241,16 @@ export function useProctorGuard(enabled: boolean) {
       scr.removeEventListener?.("change", onScreenChange);
     };
   }, [enabled, triggerViolation]);
+
+  // C. Bukti: tangkapan layar + kamera saat mulai dan tiap 5 menit (akhir ditangkap di End.tsx).
+  useEffect(() => {
+    if (!enabled || !sessionId) return;
+    void captureEvidence(sessionId, "mulai");
+    const interval = window.setInterval(() => {
+      void captureEvidence(sessionId, "berkala");
+    }, 5 * 60_000);
+    return () => window.clearInterval(interval);
+  }, [enabled, sessionId]);
 
   return {
     shieldRef,

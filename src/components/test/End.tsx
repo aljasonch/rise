@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { FiRefreshCw } from "react-icons/fi";
 import { Button, Stat } from "@/components/ui";
 import { totalQuestions } from "@/data/test";
-import { exitFullscreenIfActive, stopProctorStream, stopScreenEvidence } from "@/lib/proctor";
+import { captureEvidence, exitFullscreenIfActive, stopProctorStream, stopScreenEvidence } from "@/lib/proctor";
 import { config, statusLabel, useStore } from "@/lib/store";
 
 const duration = (ms: number) => {
@@ -24,12 +24,17 @@ const stamp: Record<string, { text: string; tone: string }> = {
 
 export default function End() {
   const session = useStore((state) => state.sessions[state.activeId]);
+  const sessionId = useStore((state) => state.activeId);
   const clearActive = useStore((state) => state.clearActive);
 
   useEffect(() => {
-    stopProctorStream();
-    stopScreenEvidence();
+    // Tangkapan akhir (submit, waktu habis, atau dihentikan) sebelum stream dilepas.
+    void captureEvidence(sessionId, "selesai").finally(() => {
+      stopProctorStream();
+      stopScreenEvidence();
+    });
     void exitFullscreenIfActive();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hanya sekali saat halaman akhir muncul
   }, []);
 
   if (!session) return null;

@@ -380,7 +380,13 @@ export async function checkWebcamFace(): Promise<{ ok: boolean; detail: string }
   }
 
   try {
-    const [video, detector] = await Promise.all([ensureOffscreenVideo(), getFaceDetector()]);
+    const [video, detector] = await Promise.all([
+      ensureOffscreenVideo(),
+      getFaceDetector().catch((err) => {
+        console.error("Gagal memuat detektor wajah", err);
+        throw new Error("detector");
+      }),
+    ]);
     const track = sharedStream?.getVideoTracks()[0];
 
     if (!track || track.readyState !== "live" || track.muted) {
@@ -409,7 +415,10 @@ export async function checkWebcamFace(): Promise<{ ok: boolean; detail: string }
     }
 
     return { ok: true, detail: "1 wajah terdeteksi" };
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "detector") {
+      return { ok: false, detail: "Gagal memuat detektor wajah" };
+    }
     return { ok: false, detail: "Akses webcam ditolak" };
   }
 }

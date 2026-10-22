@@ -41,7 +41,4 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# aset mediapipe diunduh lewat `npm run models`
-/public/mediapipe
-
 /docs

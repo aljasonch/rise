@@ -1004,28 +1004,44 @@ export function useProctorGuard(enabled: boolean) {
         }
       }
 
-      // Keyboard Lock menangkap Alt+Tab, Alt+Esc, Alt+F4, & Meta+Tab sebelum diproses OS.
+      // Keyboard Lock menangkap pintasan pindah aplikasi / jendela di Windows & macOS sebelum diproses OS:
+      // - Windows: Alt+Tab, Alt+Esc, Alt+F4, Win+Tab, Win+D, Win+E
+      // - macOS: Cmd+Tab, Cmd+Space (Spotlight), Cmd+` (pindah jendela), Cmd+H (Hide), Cmd+M (Minimize),
+      //   Cmd+Q (Quit), Cmd+Option+Esc, Ctrl+Panah (Mission Control / pindah Space)
       if (
         (event.altKey && (key === "tab" || code === "Tab" || key === "escape" || key === "f4")) ||
-        (event.metaKey && (key === "tab" || code === "Tab" || key === "d" || key === "e"))
+        (event.metaKey &&
+          (key === "tab" ||
+            code === "Tab" ||
+            code === "Space" ||
+            key === " " ||
+            code === "Backquote" ||
+            ["d", "e", "h", "m", "q"].includes(key))) ||
+        (event.ctrlKey && ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key))
       ) {
         event.preventDefault();
         event.stopPropagation();
         triggerViolation(
           "screenshot",
-          "Pintasan berpindah aplikasi (Alt+Tab / System Shortcut) tidak diizinkan selama tes",
+          "Pintasan berpindah aplikasi (Alt+Tab / Cmd+Tab / System Shortcut) tidak diizinkan selama tes",
           true,
         );
         return;
       }
 
-      // Keyboard Lock menangkap Escape & F11 agar tidak keluar dari Fullscreen.
-      if (key === "escape" || code === "Escape" || key === "f11" || code === "F11") {
+      // Keyboard Lock menangkap Escape, F11 (Windows), & Ctrl+Cmd+F (macOS) agar tidak keluar dari Fullscreen.
+      if (
+        key === "escape" ||
+        code === "Escape" ||
+        key === "f11" ||
+        code === "F11" ||
+        (event.metaKey && event.ctrlKey && key === "f")
+      ) {
         event.preventDefault();
         event.stopPropagation();
         triggerViolation(
           "fullscreen",
-          "Percobaan keluar dari mode layar penuh (Esc / F11) tidak diizinkan selama tes",
+          "Percobaan keluar dari mode layar penuh (Esc / F11 / Ctrl+Cmd+F) tidak diizinkan selama tes",
           true,
         );
         return;

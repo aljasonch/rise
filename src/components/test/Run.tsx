@@ -11,7 +11,7 @@ import {
   FiShield,
 } from "react-icons/fi";
 import { Button, Lamp, Modal, ProgressBar, Toast } from "@/components/ui";
-import { guardScreenShare, useProctorGuard } from "@/lib/proctor";
+import { CameraPreview, guardScreenShare, useProctorGuard } from "@/lib/proctor";
 import { config, useNow, useStore, type Status } from "@/lib/store";
 import { sections, totalQuestions } from "@/data/test";
 
@@ -386,6 +386,11 @@ export default function Run() {
                 Belum
               </span>
             </div>
+          </section>
+
+          <section className="panel p-4">
+            <h2 className="field text-chalk-2">Kamera pengawas</h2>
+            <CameraPreview className="mt-2.5 aspect-[4/3] w-full" />
           </section>
 
           <section className="panel p-4">

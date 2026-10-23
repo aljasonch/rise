@@ -265,7 +265,8 @@ export async function enterFullscreen(): Promise<boolean> {
     }
     try {
       const nav = window.navigator as NavigatorWithUAData;
-      await nav.keyboard?.lock?.(["Escape"]); // Chrome/Edge saja
+      // Tanpa argumen = kunci semua tombol sistem (Meta/Win, Alt+Tab, Esc, F11) di Chromium Fullscreen + HTTPS.
+      await nav.keyboard?.lock?.();
     } catch {
       // Abaikan jika browser tidak mendukung Keyboard Lock API
     }
@@ -404,6 +405,56 @@ export function stopProctorStream() {
     sharedVideo.pause();
     sharedVideo.srcObject = null;
   }
+}
+
+export function CameraPreview({ className = "" }: { className?: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    const sync = () => {
+      const video = videoRef.current;
+      const live = Boolean(
+        sharedStream?.getVideoTracks().some((track) => track.readyState === "live" && track.enabled),
+      );
+      setActive(live);
+      if (!video) return;
+      if (live && video.srcObject !== sharedStream) {
+        video.srcObject = sharedStream;
+        void video.play().catch(() => undefined);
+      } else if (!live && video.srcObject) {
+        video.srcObject = null;
+      }
+    };
+    sync();
+    const id = window.setInterval(sync, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-input border border-chassis-3 bg-chassis-2 ${className}`}
+    >
+      <video
+        ref={videoRef}
+        muted
+        playsInline
+        autoPlay
+        className={`h-full w-full -scale-x-100 object-cover ${active ? "block" : "hidden"}`}
+      />
+      {!active && (
+        <div className="grid h-full w-full place-items-center text-chalk-2">
+          <FiCamera aria-hidden size={18} />
+        </div>
+      )}
+      <span
+        aria-hidden
+        className={`absolute right-2 top-2 size-2 rounded-full ${
+          active ? "bg-ok-fg" : "bg-danger-fg"
+        }`}
+      />
+    </div>
+  );
 }
 
 const vcamNote = "Tutup aplikasi kamera virtual, lalu Periksa ulang.";
@@ -733,6 +784,9 @@ export function ProctorChecklist({
                 {item.note && (
                   <p className="mt-0.5 text-[11px] leading-relaxed text-chalk-2">{item.note}</p>
                 )}
+                {item.kind === "webcam" && (
+                  <CameraPreview className="mt-2.5 aspect-[4/3] w-48" />
+                )}
               </div>
 
               <span
@@ -944,6 +998,37 @@ export function useProctorGuard(enabled: boolean) {
       ) {
         modifierHeldRef.current = true;
         setInstantBlackout(true);
+        // Dengan Keyboard Lock aktif, cegah tombol Win/Meta membuka Start Menu OS.
+        if (event.key === "Meta" || event.key === "OS" || code === "MetaLeft" || code === "MetaRight") {
+          event.preventDefault();
+        }
+      }
+
+      // Keyboard Lock menangkap Alt+Tab, Alt+Esc, Alt+F4, & Meta+Tab sebelum diproses OS.
+      if (
+        (event.altKey && (key === "tab" || code === "Tab" || key === "escape" || key === "f4")) ||
+        (event.metaKey && (key === "tab" || code === "Tab" || key === "d" || key === "e"))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        triggerViolation(
+          "screenshot",
+          "Pintasan berpindah aplikasi (Alt+Tab / System Shortcut) tidak diizinkan selama tes",
+          true,
+        );
+        return;
+      }
+
+      // Keyboard Lock menangkap Escape & F11 agar tidak keluar dari Fullscreen.
+      if (key === "escape" || code === "Escape" || key === "f11" || code === "F11") {
+        event.preventDefault();
+        event.stopPropagation();
+        triggerViolation(
+          "fullscreen",
+          "Percobaan keluar dari mode layar penuh (Esc / F11) tidak diizinkan selama tes",
+          true,
+        );
+        return;
       }
 
       // Kombinasi Win+Shift (awal dari Win+Shift+S)
@@ -993,8 +1078,9 @@ export function useProctorGuard(enabled: boolean) {
       }
 
       if (
-        (ctrlOrMeta && ["c", "x", "u", "p", "s", "a"].includes(key)) ||
+        (ctrlOrMeta && ["c", "x", "u", "p", "s", "a", "w", "t", "n", "r"].includes(key)) ||
         key === "f12" ||
+        key === "f5" ||
         (ctrlOrMeta && event.shiftKey && ["i", "j", "c"].includes(key))
       ) {
         event.preventDefault();
@@ -1148,6 +1234,11 @@ export function useProctorGuard(enabled: boolean) {
 
       if (mediaDevices && originalGetDisplayMedia) {
         mediaDevices.getDisplayMedia = originalGetDisplayMedia;
+      }
+      try {
+        (window.navigator as NavigatorWithUAData).keyboard?.unlock?.();
+      } catch {
+        // Abaikan
       }
     };
   }, [enabled, sessionId, triggerViolation, setInstantBlackout]);
